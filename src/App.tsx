@@ -24,6 +24,7 @@ import { analyzeContractGroup, AnalysisResult, AnalysisConfig } from './lib/anal
 import { runCollaborativeAudit, AGENT_PERSONAS, performAutonomousTraining } from './lib/agents';
 import { CortexDashboard } from './components/CortexDashboard';
 import { KnowledgeBase } from './components/KnowledgeBase';
+import { TechnicalFindings } from './components/TechnicalFindings';
 import { runIntelligenceAudit, learnFromFindings } from './lib/intelligence';
 import { translations, Language } from './lib/i18n';
 import { getCachedAnalysis, cacheAnalysis } from './lib/firebase';
@@ -43,7 +44,7 @@ export default function App() {
   const [agentLogs, setAgentLogs] = useState<any[]>([]);
   const [showSettings, setShowSettings] = useState(false);
   const [filterRisk, setFilterRisk] = useState<'All' | 'Red' | 'Orange' | 'Green'>('All');
-  const [sortBy, setSortBy] = useState<'value' | 'similarity' | 'recent'>('value');
+  const [sortBy, setSortBy] = useState<'value' | 'similarity' | 'recent' | 'risk'>('risk');
   const [copied, setCopied] = useState(false);
   const [systemHealth, setSystemHealth] = useState(98.42);
   const [activeView, setActiveView] = useState<'DASHBOARD' | 'NEURAL' | 'HISTORY' | 'CORTEX' | 'ABOUT' | 'KNOWLEDGE'>('DASHBOARD');
@@ -195,6 +196,7 @@ export default function App() {
       list = list.filter(r => r.risk === filterRisk);
     }
     list.sort((a, b) => {
+      if (sortBy === 'risk') return b.riskScore - a.riskScore;
       if (sortBy === 'value') return b.totalValue - a.totalValue;
       if (sortBy === 'similarity') return b.similarityScore - a.similarityScore;
       return b.maxDayDiff - a.maxDayDiff;
@@ -595,43 +597,43 @@ export default function App() {
                           className="gov-card p-6 flex flex-col md:flex-row md:items-center justify-between gap-8 border-l-8 cursor-pointer relative"
                           style={{ borderLeftColor: r.risk === 'Red' ? '#D12C26' : r.risk === 'Orange' ? '#FCD059' : '#004884' }}
                         >
-                          <div className="flex-1 space-y-2">
-                            <div className="flex items-center gap-4">
-                              <h4 className="text-xl font-black text-[#333333] uppercase leading-none">{r.providerName}</h4>
-                              <span className={cn(
-                                "text-[9px] font-black px-2 py-1 uppercase tracking-widest border",
-                                r.loadType === 'FULL' 
-                                  ? "border-[#004884]/20 bg-[#004884]/5 text-[#004884]" 
-                                  : "border-gray-200 bg-gray-50 text-gray-500"
-                              )}>
-                                {r.loadType === 'FULL' ? 'Auditoría Completa' : 'Escaneo Referencial'}
-                              </span>
+                            <div className="flex-1 space-y-2">
+                              <div className="flex items-center gap-4">
+                                <h4 className="text-xl font-black text-[#333333] uppercase leading-none">{r.providerName}</h4>
+                                {r.risk === 'Red' && (
+                                  <span className="text-[9px] font-black bg-red-600 text-white px-2 py-1 uppercase animate-pulse">
+                                    ALERTA CRÍTICA
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-4 text-gray-400 font-mono text-[10px] uppercase">
+                                 <p className="flex items-center gap-1 text-[#004884] font-bold"><Fingerprint size={10} /> {r.redFlags[0] || 'Patrón Nominal'}</p>
+                                 <p className="flex items-center gap-1"><Database size={10} /> NIT: {r.groupKey.split('-')[1]}</p>
+                              </div>
                             </div>
-                            <div className="flex items-center gap-4 text-gray-400 font-mono text-[10px] uppercase">
-                               <p className="flex items-center gap-1"><Database size={10} /> NIT: {r.groupKey.split('-')[1]}</p>
-                               <p className="flex items-center gap-1"><Activity size={10} /> {r.risk === 'Red' ? 'Riesgo Crítico Detectado' : 'Sin Novedad Especial'}</p>
-                            </div>
-                          </div>
 
-                          <div className="flex items-center gap-10">
-                             <div className="text-right">
-                                <p className="header-label">Monto Total</p>
-                                <p className="text-xl font-black text-[#333333] tabular-nums">${r.totalValue.toLocaleString('es-CO')}</p>
+                             <div className="flex items-center gap-10">
+                                <div className="text-right w-24">
+                                   <p className="header-label">Riesgo IA</p>
+                                   <p className={cn(
+                                     "text-2xl font-black tabular-nums tracking-tighter",
+                                     r.risk === 'Red' ? "text-red-600" : r.risk === 'Orange' ? "text-orange-500" : "text-[#004884]"
+                                   )}>
+                                     {r.riskScore.toFixed(0)}%
+                                   </p>
+                                </div>
+                                <div className="text-right">
+                                   <p className="header-label">Monto Total</p>
+                                   <p className="text-xl font-black text-[#333333] tabular-nums">${(r.totalValue / 1e6).toFixed(1)}M</p>
+                                </div>
+                                <div className="text-right w-24">
+                                   <p className="header-label">Contratos</p>
+                                   <p className="text-xl font-black text-[#333333] tabular-nums">{r.contracts.length}</p>
+                                </div>
+                                <div className="w-10 h-10 flex items-center justify-center bg-gray-50 border border-gray-100 rounded-full group-hover:bg-[#004884] group-hover:text-white transition-all">
+                                  <ChevronRight size={20} className="text-gray-300" />
+                                </div>
                              </div>
-                             <div className="text-right w-24">
-                                <p className="header-label">Contratos</p>
-                                <p className="text-xl font-black text-[#333333] tabular-nums">{r.contracts.length}</p>
-                             </div>
-                             <div className="text-right w-24">
-                                <p className="header-label">Similitud</p>
-                                <p className={cn("text-xl font-black tabular-nums", r.risk === 'Red' ? "text-red-600" : "text-[#004884]")}>
-                                  {(r.similarityScore * 100).toFixed(0)}%
-                                </p>
-                             </div>
-                             <div className="w-10 h-10 flex items-center justify-center bg-gray-50 border border-gray-100 rounded-full group-hover:bg-[#004884] group-hover:text-white transition-all">
-                               <ChevronRight size={20} className="text-gray-300" />
-                             </div>
-                          </div>
                         </div>
                       ))}
                     </div>
@@ -827,112 +829,20 @@ export default function App() {
                   ))}
                 </div>
 
-                {/* Technical Evidence */}
-                <div className="space-y-8 bg-gray-50 p-8 border border-gray-100 relative overflow-hidden">
-                  <div className="absolute top-0 right-0 p-4 opacity-5">
-                    <Database size={120} />
-                  </div>
-                  <div className="flex items-center gap-4 relative z-10">
-                    <div className="w-10 h-10 bg-[#004884] text-white flex items-center justify-center">
-                      <Terminal size={20} />
-                    </div>
-                    <div>
-                      <h4 className="text-[12px] font-black text-[#004884] uppercase tracking-widest">{lang === 'ES' ? 'EVIDENCIA TÉCNICA DETALLADA' : 'DETAILED TECHNICAL EVIDENCE'}</h4>
-                      <p className="text-[10px] text-gray-400 font-bold uppercase">{selectedResult.contracts.length} contratos bajo escrutinio vectorial</p>
-                    </div>
-                  </div>
-                  
-                  <div className="grid gap-4 relative z-10">
-                    {selectedResult.detailedFindings?.map((finding, idx) => {
-                      const contractData = selectedResult.contracts.find(c => c.id_contrato === finding.contractId);
-                      const isExpanded = expandedContract === finding.contractId;
-                      
-                      return (
-                        <div key={idx} className="bg-white border-l-4 border-[#004884] shadow-sm overflow-hidden transition-all">
-                          <div className="p-6 flex flex-col md:flex-row justify-between gap-6 hover:bg-gray-50/50">
-                            <div className="space-y-3 flex-1 text-left">
-                              <div className="flex items-center gap-3">
-                                 <span className="text-[10px] font-black bg-[#FCD059] px-2 py-1 leading-none uppercase">ID: {finding.contractId}</span>
-                                 <div className="flex flex-wrap gap-2">
-                                   {finding.reasons.map((reason, ridx) => (
-                                     <span key={ridx} className="text-[9px] font-bold text-red-600 bg-red-50 border border-red-100 px-2 py-0.5 uppercase flex items-center gap-1">
-                                       <AlertTriangle size={8} /> {reason}
-                                     </span>
-                                   ))}
-                                 </div>
-                              </div>
-                              <p className="text-[12px] font-medium text-[#004884] uppercase tracking-tight line-clamp-2">
-                                {contractData?.objeto_del_contrato}
-                              </p>
-                            </div>
-                            <div className="shrink-0 flex items-center gap-3">
-                               <button 
-                                 onClick={() => setExpandedContract(isExpanded ? null : finding.contractId)}
-                                 className="text-[10px] font-black text-gray-500 hover:text-[#004884] flex items-center gap-1 uppercase"
-                               >
-                                 {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />} {isExpanded ? (lang === 'ES' ? 'Ocultar' : 'Hide') : (lang === 'ES' ? 'Detalles' : 'Details')}
-                               </button>
-                               <button 
-                                 onClick={() => { setActiveChatFinding(finding); setChatMessages([]); }}
-                                 className="text-[10px] font-black bg-[#004884] text-white px-3 py-2 flex items-center gap-2 uppercase hover:bg-black transition-colors"
-                               >
-                                 <Zap size={12} /> {lang === 'ES' ? 'Consultar Auditor' : 'Ask Auditor'}
-                               </button>
-                            </div>
-                          </div>
-                          
-                          <AnimatePresence>
-                            {isExpanded && contractData && (
-                              <motion.div 
-                                initial={{ height: 0, opacity: 0 }}
-                                animate={{ height: 'auto', opacity: 1 }}
-                                exit={{ height: 0, opacity: 0 }}
-                                className="border-t border-gray-100 bg-gray-50/30 overflow-hidden"
-                              >
-                                <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6 text-[11px] text-left">
-                                   <div className="space-y-4">
-                                      <p className="text-gray-400 font-bold uppercase tracking-widest leading-none mb-4">{lang === 'ES' ? 'INFORMACIÓN CONTRACTUAL' : 'CONTRACT INFORMATION'}</p>
-                                      <div className="grid grid-cols-2 gap-y-4 gap-x-6">
-                                         <div>
-                                            <p className="font-bold text-[#004884] uppercase mb-1">{lang === 'ES' ? 'Valor Adjudicado' : 'Awarded Value'}</p>
-                                            <p className="font-mono text-base">${parseFloat(contractData.valor_del_contrato).toLocaleString()}</p>
-                                         </div>
-                                         <div>
-                                            <p className="font-bold text-[#004884] uppercase mb-1">{lang === 'ES' ? 'Modalidad' : 'Modality'}</p>
-                                            <p className="uppercase leading-tight">{contractData.modalidad_de_contratacion}</p>
-                                         </div>
-                                         <div>
-                                            <p className="font-bold text-[#004884] uppercase mb-1">{lang === 'ES' ? 'Fecha de Firma' : 'Signing Date'}</p>
-                                            <p>{new Date(contractData.fecha_de_firma).toLocaleDateString()}</p>
-                                         </div>
-                                         <div>
-                                            <p className="font-bold text-[#004884] uppercase mb-1">{lang === 'ES' ? 'Ubicación' : 'Location'}</p>
-                                            <p className="uppercase">{contractData.departamento} | {contractData.ciudad}</p>
-                                         </div>
-                                      </div>
-                                   </div>
-                                   <div className="space-y-2">
-                                      <p className="text-gray-400 font-bold uppercase tracking-widest mb-4 leading-none">{lang === 'ES' ? 'OBJETO TÉCNICO (INTEGRO)' : 'FULL TECHNICAL OBJECT'}</p>
-                                      <div className="text-gray-600 leading-relaxed bg-white border border-gray-100 p-4 rounded shadow-inner max-h-48 overflow-y-auto">
-                                        {contractData.objeto_del_contrato}
-                                      </div>
-                                   </div>
-                                   <div className="md:col-span-2 flex justify-end pt-4 border-t border-gray-100">
-                                      <button 
-                                        onClick={() => window.open(`https://www.secop.gov.co/Consultas/busqueda/detalle-del-proceso.aspx?IdProcess=${finding.contractId}`, '_blank')}
-                                        className="text-[10px] font-black text-[#004884] hover:underline flex items-center gap-1 uppercase"
-                                      >
-                                        <ExternalLink size={12} /> SECOP II DIGITAL FILE
-                                      </button>
-                                   </div>
-                                </div>
-                              </motion.div>
-                            )}
-                          </AnimatePresence>
-                        </div>
-                      );
-                    })}
-                  </div>
+                {/* Technical Evidence OVERHAUL */}
+                <div className="space-y-12">
+                   <div className="flex items-center gap-4">
+                      <h4 className="section-title text-sm">{lang === 'ES' ? 'ANÁLISIS TÉCNICO E INDICIOS FORENSES' : 'TECHNICAL ANALYSIS & FORENSIC CLUES'}</h4>
+                      <div className="h-px flex-1 bg-gray-100" />
+                   </div>
+                   
+                   <TechnicalFindings 
+                     result={selectedResult}
+                     lang={lang}
+                     expandedContract={expandedContract}
+                     setExpandedContract={setExpandedContract}
+                     onAskAuditor={(finding) => { setActiveChatFinding(finding); setChatMessages([]); }}
+                   />
                 </div>
 
                 {/* Report Content */}

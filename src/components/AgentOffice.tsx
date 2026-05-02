@@ -4,11 +4,12 @@ import {
   Database, Gavel, Activity, 
   Cpu, Globe, Terminal, Shield, 
   Briefcase, Landmark, Fingerprint, Zap, X,
-  DollarSign, ShieldCheck, MapPin
+  DollarSign, ShieldCheck, MapPin, Search,
+  Box, Share2, Layers
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { AGENT_PERSONAS, AgentId } from '../lib/agents';
-import { VoxelAgent } from './VoxelAgent';
+import { NeuralHologram } from './VoxelAgent';
 
 interface AgentState {
   id: AgentId;
@@ -17,6 +18,7 @@ interface AgentState {
   isWorking: boolean;
   thought?: string;
   energy: number;
+  targetNode?: string;
 }
 
 interface Dialogue {
@@ -28,55 +30,92 @@ interface Dialogue {
 
 export function AgentOffice({ logs }: { logs: any[] }) {
   const [agents, setAgents] = useState<Record<AgentId, AgentState>>({
-    FORENSIC: { id: 'FORENSIC', pos: { x: 20, y: 30 }, activity: 'Idle', isWorking: false, energy: 80 },
-    LEGAL: { id: 'LEGAL', pos: { x: 80, y: 30 }, activity: 'Idle', isWorking: false, energy: 95 },
-    SYSTEM: { id: 'SYSTEM', pos: { x: 50, y: 80 }, activity: 'Standby', isWorking: false, energy: 100 },
-    FINANCIAL: { id: 'FINANCIAL', pos: { x: 20, y: 70 }, activity: 'Idle', isWorking: false, energy: 90 },
-    ETHICS: { id: 'ETHICS', pos: { x: 80, y: 70 }, activity: 'Monitoring', isWorking: false, energy: 85 },
-    FIELD: { id: 'FIELD', pos: { x: 50, y: 20 }, activity: 'Standby', isWorking: false, energy: 75 },
+    FORENSIC: { id: 'FORENSIC', pos: { x: 20, y: 30 }, activity: 'Idle', isWorking: false, energy: 80, targetNode: 'N2' },
+    LEGAL: { id: 'LEGAL', pos: { x: 80, y: 30 }, activity: 'Idle', isWorking: false, energy: 95, targetNode: 'N1' },
+    SYSTEM: { id: 'SYSTEM', pos: { x: 50, y: 80 }, activity: 'Standby', isWorking: false, energy: 100, targetNode: 'N3' },
+    FINANCIAL: { id: 'FINANCIAL', pos: { x: 20, y: 70 }, activity: 'Idle', isWorking: false, energy: 90, targetNode: 'N5' },
+    ETHICS: { id: 'ETHICS', pos: { x: 80, y: 70 }, activity: 'Monitoring', isWorking: false, energy: 85, targetNode: 'N4' },
+    FIELD: { id: 'FIELD', pos: { x: 50, y: 20 }, activity: 'Standby', isWorking: false, energy: 75, targetNode: 'N3' },
   });
 
   const [dialogue, setDialogue] = useState<Dialogue | null>(null);
   const [activeAgent, setActiveAgent] = useState<AgentId | null>(null);
+  const [tickerOffset, setTickerOffset] = useState(0);
 
   const nodes = [
-    { id: 'N1', label: 'SOCRATA_01', x: 20, y: 20 },
-    { id: 'N2', label: 'LEGAL_ONTOLOGY', x: 80, y: 25 },
-    { id: 'N3', label: 'NEURAL_CORE', x: 50, y: 50 },
-    { id: 'N4', label: 'FINANCE_LEDGER', x: 85, y: 75 },
-    { id: 'N5', label: 'POLITICAL_MAP', x: 15, y: 80 },
+    { id: 'N1', label: 'LEGAL_JURIS', x: 20, y: 20, icon: Landmark },
+    { id: 'N2', label: 'SEC_AUDIT', x: 80, y: 20, icon: Shield },
+    { id: 'N3', label: 'NEURAL_CORE', x: 50, y: 50, icon: Cpu },
+    { id: 'N4', label: 'ETHICS_MAP', x: 85, y: 75, icon: Fingerprint },
+    { id: 'N5', label: 'FISC_VAULT', x: 15, y: 80, icon: DollarSign },
   ];
 
-  // Humanized dialogue generator
+  // Live Neural Stream Ticker
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTickerOffset(prev => prev - 1);
+    }, 50);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Neural Interaction - Now uses real log context
   useEffect(() => {
     const interval = setInterval(() => {
       const allAgentIds = Object.keys(agents) as AgentId[];
-      if (Math.random() > 0.6) {
+      if (Math.random() > 0.4) {
         const from = allAgentIds[Math.floor(Math.random() * allAgentIds.length)];
         const possibleTargets = allAgentIds.filter(a => a !== from);
         const to = possibleTargets[Math.floor(Math.random() * possibleTargets.length)];
         
+        // Dynamic message based on recent findings if available
+        const lastFindings = logs.slice(-5).map(l => l.message);
+        const contextMsg = lastFindings.length > 0 ? lastFindings[Math.floor(Math.random() * lastFindings.length)] : null;
+
         const dialogs: Record<AgentId, string[]> = {
-          FORENSIC: ["¡Hey FIELD! Verifica la dirección de este contratista.", "¿LEGAL, esto cumple con la Ley 80?", "SYSTEM, aumenta la sensibilidad."],
-          LEGAL: ["FORENSIC, estos términos son ambiguos.", "ETHICS, revisa el historial de este representante.", "Sigo rastreando la jurisprudencia."],
-          SYSTEM: ["Optimización de red al 98%. SIGUE ASÍ.", "Aumentando potencia de procesamiento.", "Todos los nodos están sincronizados."],
-          FINANCIAL: ["Detecto un pico de valor atípico aquí.", "FIELD, los costos de materiales no cuadran.", "Analizando flujos monetarios..."],
-          ETHICS: ["Este contratista tiene vínculos sospechosos.", "LEGAL, ¿es esto un conflicto de interés?", "Monitoreando integridad..."],
-          FIELD: ["Estoy verificando la obra en terreno.", "FINANCIAL, el avance físico es nulo.", "Recopilando evidencia fotográfica."],
+          FORENSIC: [
+            contextMsg ? `Reviewing: ${contextMsg.slice(0, 30)}...` : "Scanning semantic clusters.",
+            "Found anomaly in signature group.",
+            "Cross-referencing with FIELD logs."
+          ],
+          LEGAL: [
+            "This violates clause L1 of Ley 80.",
+            "Ethics, check the provider ownership.",
+            "Nexus confirmed on this node."
+          ],
+          SYSTEM: [
+            "Neural weights optimized.",
+            "Broadcast active. High integrity detected.",
+            "Syncing all node states."
+          ],
+          FINANCIAL: [
+            "Capital flow suspect in this cluster.",
+            "Variance exceeds 45%. Alerting LEGAL.",
+            "Following the money trail."
+          ],
+          ETHICS: [
+            "Nexus found with political entity.",
+            "Integrity score dropping.",
+            "LEGAL, flag this entity immediately."
+          ],
+          FIELD: [
+            "Terrestrial verification failed.",
+            "Coordinate mismatch on project site.",
+            "Syncing ground data."
+          ],
         };
 
-        const messages = dialogs[from] || ["Sincronizando..."];
+        const messages = dialogs[from] || ["Active."];
         
         setDialogue({ 
           from, to, 
           message: messages[Math.floor(Math.random() * messages.length)],
-          type: 'INFO'
+          type: Math.random() > 0.8 ? 'ALERT' : 'INFO'
         });
         setTimeout(() => setDialogue(null), 4000);
       }
-    }, 8000);
+    }, 6000);
     return () => clearInterval(interval);
-  }, [agents]);
+  }, [agents, logs]);
 
   useEffect(() => {
     if (logs.length === 0) return;
@@ -111,39 +150,87 @@ export function AgentOffice({ logs }: { logs: any[] }) {
   }, [logs]);
 
   return (
-    <div className="relative w-full h-[600px] bg-[#0c0c0e] border border-white/5 overflow-hidden group font-sans">
-      {/* 3D-ish Floor */}
-      <div className="absolute inset-0 perspective-[1000px]">
-        <div className="absolute inset-0 bg-zinc-900 origin-bottom transform rotateX-[60deg] translate-y-[20%] opacity-20">
-          <div className="w-full h-full" style={{ backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)', backgroundSize: '50px 50px' }} />
-        </div>
-      </div>
-      <div className="absolute top-4 left-4 right-4 flex justify-between items-start pointer-events-none z-[100]">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-ping" />
-            <span className="text-[9px] font-black text-white uppercase tracking-[0.3em]">CORTEX_BROADCAST_ACTIVE</span>
-          </div>
-          <AnimatePresence mode="wait">
-            <motion.p 
-              key={logs[logs.length-1]?.message}
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 10 }}
-              className="text-[10px] font-mono text-zinc-500 max-w-sm truncate"
-            >
-              {logs[logs.length-1]?.message || "Awaiting neural input..."}
-            </motion.p>
-          </AnimatePresence>
+    <div className="relative w-full h-[600px] bg-[#020204] border border-white/5 overflow-hidden group font-sans">
+      {/* 3D Neural Environment */}
+      <div className="absolute inset-0 perspective-[2000px]">
+        <div className="absolute inset-0 origin-bottom transform rotateX-[55deg] translate-y-[-10%] opacity-20">
+          <div className="w-full h-full" style={{ 
+            backgroundImage: 'linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px)', 
+            backgroundSize: '40px 40px' 
+          }} />
         </div>
         
-        <div className="flex flex-col items-end gap-1">
-          <div className="px-2 py-1 bg-white/5 border border-white/10 flex items-center gap-2">
-            <Fingerprint size={10} className="text-zinc-500" />
-            <span className="text-[7px] font-mono text-zinc-400 uppercase">Secure Node: Gov-CO-AX1</span>
-          </div>
+        {/* Glowing Neural Channels */}
+        <div className="absolute inset-0 pointer-events-none overflow-hidden">
+          {[...Array(5)].map((_, i) => (
+            <motion.div 
+              key={i}
+              animate={{ 
+                x: ['-100%', '200%'],
+                opacity: [0, 0.4, 0]
+              }}
+              transition={{ duration: 3, delay: i * 0.8, repeat: Infinity, ease: "linear" }}
+              className="h-[1px] w-full bg-gradient-to-r from-transparent via-[#004884] to-transparent absolute"
+              style={{ top: `${20 * i}%` }}
+            />
+          ))}
         </div>
       </div>
+
+      {/* Header Overlay */}
+      <div className="absolute top-0 left-0 right-0 p-6 flex justify-between items-start z-[100] bg-gradient-to-b from-black/80 to-transparent pointer-events-none">
+        <div className="space-y-2">
+          <div className="flex items-center gap-3">
+            <div className="w-2 h-2 bg-red-500 rounded-full animate-ping" />
+            <span className="text-[10px] font-black text-white uppercase tracking-[0.4em]">NEURAL_OPS_ACTIVE</span>
+          </div>
+          <div className="flex items-center gap-4">
+             <div className="flex items-center gap-2">
+                <Activity size={12} className="text-[#004884]" />
+                <span className="text-[8px] font-mono text-zinc-500 uppercase">Load: 84%</span>
+             </div>
+             <div className="flex items-center gap-2">
+                <Shield size={12} className="text-zinc-500" />
+                <span className="text-[8px] font-mono text-zinc-500 uppercase">Integrity: Shield-X</span>
+             </div>
+          </div>
+        </div>
+        
+        <div className="flex flex-col items-end gap-2">
+          <div className="px-3 py-1 bg-[#004884]/10 border border-[#004884]/30 flex items-center gap-2 rounded-sm backdrop-blur-md">
+            <Fingerprint size={12} className="text-[#004884]" />
+            <span className="text-[8px] font-mono text-[#004884] uppercase">Secure Node: Gov-CO-AX1</span>
+          </div>
+          <AnimatePresence mode="wait">
+             <motion.p 
+               key={logs[logs.length-1]?.message}
+               initial={{ opacity: 0, x: 20 }}
+               animate={{ opacity: 1, x: 0 }}
+               exit={{ opacity: 0, x: -20 }}
+               className="text-[9px] font-mono text-zinc-400 max-w-sm text-right"
+             >
+               FETCH: {logs[logs.length-1]?.message?.slice(0, 50)}...
+             </motion.p>
+          </AnimatePresence>
+        </div>
+      </div>
+
+      {/* Neural Node Points */}
+      {nodes.map(node => {
+        const NodeIcon = node.icon;
+        return (
+          <div 
+            key={node.id}
+            className="absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-2 opacity-40 hover:opacity-100 transition-opacity"
+            style={{ left: `${node.x}%`, top: `${node.y}%` }}
+          >
+            <div className="p-2 border border-white/10 bg-black/40 backdrop-blur-md rounded-lg">
+              <NodeIcon size={16} className="text-zinc-500" />
+            </div>
+            <span className="text-[7px] font-black text-zinc-600 uppercase tracking-widest">{node.label}</span>
+          </div>
+        );
+      })}
 
       {/* Schematic Grid */}
       <div 
@@ -258,18 +345,19 @@ export function AgentOffice({ logs }: { logs: any[] }) {
                 />
               </div>
 
-              {/* Minecraft Voxel Representation */}
-              <VoxelAgent 
+              {/* Neural Hologram Representation */}
+              <NeuralHologram 
+                id={id}
                 color={persona.color} 
                 isWorking={state.isWorking} 
                 className="mb-2"
               />
               
-              <div className="text-center px-3 py-1 bg-black border border-white/10 shadow-xl z-20">
+              <div className="text-center px-3 py-1 bg-black/80 backdrop-blur-md border border-white/10 shadow-2xl z-20 rounded-sm">
                 <p className="text-[8px] font-black tracking-widest uppercase text-white mb-0.5">{persona.name}</p>
                 <div className="flex items-center gap-1 justify-center">
                   <div className={cn("w-1 h-1 rounded-full", state.isWorking ? "bg-green-500 animate-pulse" : "bg-zinc-600")} />
-                  <p className="text-[7px] font-mono text-zinc-500 uppercase">{state.activity}</p>
+                  <p className="text-[7px] font-mono text-zinc-400 uppercase">{state.activity}</p>
                 </div>
               </div>
 
@@ -297,6 +385,29 @@ export function AgentOffice({ logs }: { logs: any[] }) {
           </motion.div>
         );
       })}
+
+      {/* Neural Thought Stream Footer */}
+      <div 
+        className="absolute bottom-0 left-0 right-0 h-10 bg-black/95 border-t border-white/5 flex items-center overflow-hidden z-[200]"
+      >
+        <div className="shrink-0 px-4 bg-black h-full flex items-center border-r border-white/10 z-10">
+          <Terminal size={14} className="text-[#004884]" />
+          <span className="text-[8px] font-black text-white ml-2 uppercase tracking-tighter">DATA_FEED_L1</span>
+        </div>
+        <div className="flex whitespace-nowrap gap-8" style={{ transform: `translateX(${tickerOffset % 800}px)` }}>
+          {logs.slice(-10).map((l, i) => (
+             <span key={i} className="text-[8px] font-mono text-[#004884]/60 uppercase">
+                [{new Date().toLocaleTimeString()}]: {l.message?.slice(0, 40)}... | NODE_REF_{i} // 
+             </span>
+          ))}
+          {/* Repeat for continuous effect */}
+          {logs.slice(-10).map((l, i) => (
+             <span key={i + 'rep'} className="text-[8px] font-mono text-[#004884]/60 uppercase">
+                [{new Date().toLocaleTimeString()}]: {l.message?.slice(0, 40)}... | NODE_REF_{i} // 
+             </span>
+          ))}
+        </div>
+      </div>
 
       {/* Expanded Agent Panel (Humanized Details) */}
       <AnimatePresence>

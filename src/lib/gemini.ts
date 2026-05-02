@@ -80,12 +80,19 @@ export async function generateForensicReport(results: AnalysisResult[] | Analysi
     })), null, 2)}
     
     INSTRUCTIONS:
-    1. Genera un INFORME DE AUDITORA FORENSE profesional.
-    2. Usa una estructura jerárquica: Resumen Ejecutivo, Hallazgos Específicos, Recomendaciones Legales.
-    3. Enfócate en el RIESGO DE FRACCIONAMIENTO CONTRACTUAL (Ley 80 de 1993).
-    4. El tono debe ser técnico, seco y autoritario. Menciona que los datos fueron extraídos de SECOP II.
-    5. Utiliza Markdown para el formato.
-    6. Idioma: ${isEs ? "Español" : "Inglés"}.
+    1. Genera un INFORME DE AUDITORÍA FORENSE DE ALTO IMPACTO.
+    2. Usa una estructura jerárquica clara:
+       - RESUMEN EJECUTIVO PARA ALTA GERENCIA (Impacto fiscal total).
+       - MATRIZ DE RIESGOS (Clasificación de hallazgos por severidad).
+       - EVIDENCIA TÉCNICA DETALLADA (Cita contratos específicos y montos).
+       - FUNDAMENTOS JURÍDICOS (Ley 80, Ley 1474, etc).
+       - RECOMENDACIONES DE MITIGACIÓN.
+    3. Enfócate en el RIESGO DE FRACCIONAMIENTO CONTRACTUAL y POSIBLE COLUSIÓN.
+    4. Identifica específicamente los "contratos puente" o "nodos de colusión" en el clúster.
+    5. Ignora hallazgos con riesgo despreciable; enfócate en lo que un auditor humano querría denunciar.
+    6. El tono debe ser técnico, seco y autoritario. Menciona que los datos fueron extraídos de SECOP II.
+    7. Utiliza Markdown para el formato, usa negritas para montos y términos legales.
+    8. Idioma: ${isEs ? "Español" : "Inglés"}.
   `;
 
   if (!API_KEY) return isEs ? "Error: API Key no configurada." : "Error: API Key not configured.";
