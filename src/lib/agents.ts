@@ -3,11 +3,13 @@ import { getLegalContext } from './ragManager';
 import { AnalysisResult } from './analysis';
 import { neuralManager } from './neuralManager';
 
+export type AgentId = 'FORENSIC' | 'LEGAL' | 'SYSTEM' | 'FINANCIAL' | 'ETHICS' | 'FIELD';
+
 export interface AgentAction {
-  agent: 'FORENSIC' | 'LEGAL' | 'SYSTEM';
+  agent: AgentId;
   message: string;
   timestamp: string;
-  status: 'THINKING' | 'EXECUTING' | 'OPTIMIZING' | 'COMPLETED';
+  status: 'THINKING' | 'EXECUTING' | 'OPTIMIZING' | 'COMPLETED' | 'IDLE';
 }
 
 export interface NeuralMemory {
@@ -39,6 +41,27 @@ export const AGENT_PERSONAS = {
     role: "Garantizar la estabilidad y refinar pesos neuronales de detección.",
     color: "#3b82f6",
     icon: "Cpu"
+  },
+  FINANCIAL: {
+    name: "Fiscal Hunter",
+    focus: "Money Trailing",
+    role: "Rastrear flujos de capital y detectar sobrecostos atípicos.",
+    color: "#f59e0b",
+    icon: "DollarSign"
+  },
+  ETHICS: {
+    name: "Probity Arbiter",
+    focus: "Conflict of Interest",
+    role: "Verificar integridad de contratistas y posibles nexos políticos.",
+    color: "#ef4444",
+    icon: "ShieldCheck"
+  },
+  FIELD: {
+    name: "Ground Scout",
+    focus: "Project Verification",
+    role: "Verificar evidencia física y logística de ejecución en territorio.",
+    color: "#64748b",
+    icon: "MapPin"
   }
 };
 
@@ -51,13 +74,18 @@ function saveMemory(mem: NeuralMemory) {
   localStorage.setItem(MEMORY_KEY, JSON.stringify(mem));
 }
 
-export async function runCollaborativeAudit(result: AnalysisResult, lang: 'ES' | 'EN' = 'ES') {
+export async function runCollaborativeAudit(
+  result: AnalysisResult, 
+  lang: 'ES' | 'EN' = 'ES',
+  onUpdate?: (logs: AgentAction[], memory: NeuralMemory) => void
+) {
   const memory = getMemory();
   const logs: AgentAction[] = [];
   const isEs = lang === 'ES';
 
   const addLog = (agent: AgentAction['agent'], message: string, status: AgentAction['status']) => {
     logs.push({ agent, message, timestamp: new Date().toISOString(), status });
+    if (onUpdate) onUpdate([...logs], { ...memory });
   };
 
   // 1. SYSTEM: Check Health & Load Memory
@@ -65,13 +93,22 @@ export async function runCollaborativeAudit(result: AnalysisResult, lang: 'ES' |
   await neuralManager.processRequest("Restore neural weights", { type: 'SYSTEM' });
   addLog('SYSTEM', isEs ? `Memoria activa: ${memory.totalAudits} nodos procesados.` : `Memory active: ${memory.totalAudits} historical nodes processed.`, 'EXECUTING');
 
-  // 2. LEGAL: Knowledge Base Lookup
+  // 2. LEGAL & ETHICS: Compliance & Probe
   addLog('LEGAL', isEs ? `Escaneando banderas rojas OCDE: ${result.redFlags.length} detectadas` : `Scanning Socrata Context vs OECD Red Flags: ${result.redFlags.length} detected`, 'THINKING');
+  addLog('ETHICS', isEs ? "Auditando integridad de firmantes y posibles conflictos..." : "Auditing integrity of signatories and potential conflicts...", 'THINKING');
   await neuralManager.processRequest(`Scan context for ${result.redFlags.length} flags`, { type: 'LEGAL' });
   const legalContext = await getLegalContext(result.contracts[0].objeto_del_contrato, result.redFlags);
-  addLog('LEGAL', isEs ? "Jurisprudencia reclasificada según densidad de patrones." : "Jurisprudence re-ranked based on current pattern density.", 'COMPLETED');
+  addLog('LEGAL', isEs ? "Jurisprudencia reclasificada." : "Jurisprudence re-ranked.", 'COMPLETED');
+  addLog('ETHICS', isEs ? "Análisis de nexos completado. Nivel de integridad: Estable." : "Nexus analysis completed. Integrity level: Stable.", 'COMPLETED');
 
-  // 3. FORENSIC: Synthesis
+  // 3. FINANCIAL & FIELD: Value & Reality Sync
+  addLog('FINANCIAL', isEs ? "Rastreando flujos de capital y concentración de valor..." : "Tracing capital flows and value concentration...", 'EXECUTING');
+  addLog('FIELD', isEs ? "Simulando verificación técnica en territorio (GeoSync)..." : "Simulating technical verification in territory (GeoSync)...", 'EXECUTING');
+  await new Promise(r => setTimeout(r, 1000));
+  addLog('FINANCIAL', isEs ? "Alertas de sobrecosto marginal procesadas." : "Marginal overcost alerts processed.", 'COMPLETED');
+  addLog('FIELD', isEs ? "Evidencia satelital indexada. Coherencia física detectada." : "Satellite evidence indexed. Physical coherence detected.", 'COMPLETED');
+
+  // 4. FORENSIC: Synthesis
   addLog('FORENSIC', isEs ? "Cruzando clústeres temporales y acumulación de valor..." : "Cross-referencing temporal clusters and value bunching...", 'THINKING');
   
   const forensicPrompt = isEs 

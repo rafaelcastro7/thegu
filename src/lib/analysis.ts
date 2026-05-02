@@ -1,6 +1,14 @@
 import { Contract } from "./secop";
 import { getEmbedding, cosineSimilarity, ai } from "./gemini";
 import { differenceInDays } from "date-fns";
+import { runIntelligenceAudit } from "./intelligence";
+
+export interface DetailedFinding {
+  contractId: string;
+  reasons: string[];
+  evidence: string;
+  contract: Contract;
+}
 
 export interface AnalysisResult {
   groupKey: string;
@@ -12,6 +20,7 @@ export interface AnalysisResult {
   risk: "Red" | "Orange" | "Green";
   quickObservation?: string;
   redFlags: string[];
+  detailedFindings: DetailedFinding[];
   riskScore: number; // 0-100
   loadType?: 'FULL' | 'REFERENCE';
 }
@@ -72,9 +81,15 @@ export async function analyzeContractGroup(
   }
   const avgSim = pairs > 0 ? totalSim / pairs : 0;
 
-  // 3. OECD RED FLAGS CALCULATION (Extreme Forensic Mode)
-  const redFlags: string[] = [];
+  // 3. INTELLIGENCE AUDIT (New Forensic Layer)
+  const intelAudit = runIntelligenceAudit(contracts);
+
+  // 4. OECD RED FLAGS CALCULATION (Extreme Forensic Mode)
+  const redFlags: string[] = [...intelAudit.flags];
   let riskScore = 0;
+
+  // Add intelligence evidence to detailed findings base
+  const forensicEvidence = intelAudit.detailedEvidence;
 
   // FLAG 1: High Semantic Duplication (Identity of Object)
   if (avgSim > config.similarityThreshold) {
@@ -139,8 +154,36 @@ export async function analyzeContractGroup(
   }
 
   // Final Risk Classification (Capped at 100)
+  riskScore += (intelAudit.riskScore * 0.5); // Add intelligence weight
   riskScore = Math.min(100, riskScore);
   
+  // 4. Detailed Findings per Contract
+  const detailedFindings: DetailedFinding[] = contracts.map((c, i) => {
+    const individualReasons: string[] = [];
+    const val = cleanValue(c.valor_del_contrato);
+    const mod = c.modalidad_de_contratacion?.toUpperCase() || "";
+    
+    if (val > config.valueThreshold) individualReasons.push("Cuantía individual significativa");
+    if (mod.includes('DIRECTA') || mod.includes('MINIMA')) individualReasons.push(`Modalidad de riesgo: ${c.modalidad_de_contratacion}`);
+    
+    // Check similarity with peers
+    for (let j = 0; j < embeddings.length; j++) {
+      if (i !== j && embeddings[i] && embeddings[j]) {
+        const sim = cosineSimilarity(embeddings[i]!, embeddings[j]!);
+        if (sim > config.similarityThreshold) {
+          individualReasons.push(`Identidad semántica con contrato ${contracts[j].id_contrato} (${(sim * 100).toFixed(1)}%)`);
+        }
+      }
+    }
+
+    return {
+      contractId: c.id_contrato || String(i),
+      reasons: individualReasons,
+      evidence: `Objeto: ${c.objeto_del_contrato.substring(0, 100)}... | Valor: ${c.valor_del_contrato} | Fecha: ${c.fecha_de_firma}`,
+      contract: c
+    };
+  });
+
   let risk: "Red" | "Orange" | "Green" = "Green";
   if (riskScore >= 75) risk = "Red";
   else if (riskScore >= 45) risk = "Orange";
@@ -150,10 +193,11 @@ export async function analyzeContractGroup(
     try {
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
-        contents: `Actúa como Analista de Integridad de la OCDE. Genera una instrucción de riesgo de UNA SOLA ORACIÓN técnica y contundente para este hallazgo: ${contracts.length} contratos, riesgo ${riskScore}/100, flags [${redFlags.join(', ')}]. No menciones nombres propios.`,
+        contents: `Actúa como Analista de Integridad de la OCDE. Genera una instrucción de riesgo de UNA SOLA ORACIÓN técnica y contundente para este hallazgo: ${contracts.length} contratos, riesgo ${riskScore}/100, flags [${redFlags.join(', ')}].`,
         config: { temperature: 0.1 }
       });
-      quickObservation = response.text.trim().replace(/^"|"$/g, '');
+      quickObservation = response.text || "";
+      quickObservation = quickObservation.trim().replace(/^"|"$/g, '');
     } catch (e) {
       quickObservation = "Alerta de fraccionamiento: Patrón de contratación fragmentada detectado sistemáticamente con elusión de competencia.";
     }
@@ -169,6 +213,7 @@ export async function analyzeContractGroup(
     risk,
     quickObservation,
     redFlags,
+    detailedFindings,
     riskScore
   };
 }

@@ -63,8 +63,6 @@ async function initializeIndex() {
     try {
       const embedding = await getEmbedding(item.text);
       indexed.push({ ...item, embedding: embedding || undefined });
-      // Throttling to respect free-tier limits
-      await new Promise(r => setTimeout(r, 1000)); 
     } catch (e) {
       console.warn("Skipping RAG index for item to avoid crash:", item.id);
     }

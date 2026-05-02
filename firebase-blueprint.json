@@ -1,0 +1,29 @@
+{
+  "entities": {
+    "AnalysisResult": {
+      "title": "Analysis Result",
+      "description": "Cached analysis of a group of contracts",
+      "type": "object",
+      "properties": {
+        "groupKey": { "type": "string" },
+        "providerName": { "type": "string" },
+        "totalValue": { "type": "number" },
+        "similarityScore": { "type": "number" },
+        "maxDayDiff": { "type": "number" },
+        "risk": { "type": "string", "enum": ["Red", "Orange", "Green"] },
+        "quickObservation": { "type": "string" },
+        "redFlags": { "type": "array" },
+        "detailedFindings": { "type": "array" },
+        "riskScore": { "type": "number" },
+        "timestamp": { "type": "number" }
+      },
+      "required": ["groupKey", "providerName", "riskScore", "risk"]
+    }
+  },
+  "firestore": {
+    "analysis_cache/{groupKey}": {
+      "schema": "AnalysisResult",
+      "description": "Collection of cached analysis results indexed by groupKey"
+    }
+  }
+}

@@ -8,7 +8,7 @@ import {
   Search, ShieldAlert, BarChart3, FileText, Database, Loader2, 
   AlertTriangle, CheckCircle2, ChevronRight, Gavel, Info, X, 
   Target, Cpu, Scale, Download, Filter, Copy, Check, Settings, 
-  History, Activity, Zap, ExternalLink, RefreshCw,
+  History, Activity, Zap, ExternalLink, RefreshCw, ChevronDown, ChevronUp,
   Trash2, Fingerprint, Files, ArrowRight, Terminal, Monitor, Globe, Landmark, BookOpen
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -23,7 +23,12 @@ import { fetchContractsByEntity, groupContractsByProvider, Contract } from './li
 import { analyzeContractGroup, AnalysisResult, AnalysisConfig } from './lib/analysis';
 import { runCollaborativeAudit, AGENT_PERSONAS, performAutonomousTraining } from './lib/agents';
 import { CortexDashboard } from './components/CortexDashboard';
+import { KnowledgeBase } from './components/KnowledgeBase';
+import { runIntelligenceAudit, learnFromFindings } from './lib/intelligence';
 import { translations, Language } from './lib/i18n';
+import { getCachedAnalysis, cacheAnalysis } from './lib/firebase';
+import { chatAboutFinding } from './lib/gemini';
+import { NOTORIOUS_ENTITIES } from './lib/intelligence';
 
 export default function App() {
   const [lang, setLang] = useState<Language>('ES');
@@ -41,10 +46,42 @@ export default function App() {
   const [sortBy, setSortBy] = useState<'value' | 'similarity' | 'recent'>('value');
   const [copied, setCopied] = useState(false);
   const [systemHealth, setSystemHealth] = useState(98.42);
-  const [activeView, setActiveView] = useState<'DASHBOARD' | 'NEURAL' | 'HISTORY' | 'CORTEX' | 'ABOUT'>('DASHBOARD');
+  const [activeView, setActiveView] = useState<'DASHBOARD' | 'NEURAL' | 'HISTORY' | 'CORTEX' | 'ABOUT' | 'KNOWLEDGE'>('DASHBOARD');
   const [neuralMemory, setNeuralMemory] = useState<any>(null);
   const [statusMessage, setStatusMessage] = useState('SYSTEM_IDLE');
   const [progress, setProgress] = useState(0);
+  const [activeChatFinding, setActiveChatFinding] = useState<any | null>(null);
+  const [chatMessages, setChatMessages] = useState<{role: 'user' | 'ai', content: string}[]>([]);
+  const [chatLoading, setChatLoading] = useState(false);
+  const [expandedContract, setExpandedContract] = useState<string | null>(null);
+  
+  const handleRetroactiveAudit = () => {
+    setLoading(true);
+    setStatusMessage(lang === 'ES' ? 'EJECUTANDO AUDITORÍA RETROACTIVA...' : 'RUNNING RETROACTIVE AUDIT...');
+    
+    setTimeout(() => {
+      setResults(prev => {
+        const updated = prev.map(res => {
+          const intel = runIntelligenceAudit(res.detailedFindings.map(f => f.contract));
+          return {
+            ...res,
+            riskScore: Math.min(100, res.riskScore + (intel.riskScore * 0.3)),
+            redFlags: Array.from(new Set([...res.redFlags, ...intel.flags]))
+          };
+        });
+        
+        localStorage.setItem('GOB_IA_CACHE_V1', JSON.stringify({
+          results: updated,
+          health: systemHealth,
+        }));
+        
+        return updated;
+      });
+      setLoading(false);
+      setStatusMessage('AUDIT_COMPLETE');
+    }, 1500);
+  };
+
 
   const [config, setConfig] = useState<AnalysisConfig>({
     similarityThreshold: 0.85,
@@ -73,20 +110,11 @@ export default function App() {
       const existing = localStorage.getItem('GOB_IA_CACHE_V1');
       if (existing) return;
 
-      const topEntities = [
-        'UNGRD', 
-        'CARDIQUE', 
-        'SENA', 
-        'AEROCIVIL', 
-        'ICBF', 
-        'EJERCITO', 
-        'POLICIA', 
-        'GOBERNACION DEL CHOCO', 
-        'ANTIOQUIA', 
-        'BOGOTA'
-      ];
+      // Prioritize the top 10 most historically opaque entities
+      const topEntities = NOTORIOUS_ENTITIES.slice(0, 10);
+      
       setLoading(true);
-      setStatusMessage(lang === 'ES' ? 'INICIANDO PROTOCOLO DE AUDITORÍA...' : 'INITIATING AUDIT PROTOCOL...');
+      setStatusMessage(lang === 'ES' ? 'INICIANDO PROTOCOLO BHA (THEGU)...' : 'INITIATING BHA (THEGU) PROTOCOL...');
       
       const registry = new Set<string>();
       
@@ -94,56 +122,53 @@ export default function App() {
         const entity = topEntities[i];
         setProgress(Math.round((i / topEntities.length) * 100));
 
-        // Self-Throttling: Add a small delay between entities
-        if (i > 0) await new Promise(r => setTimeout(r, 1500));
+        if (i > 0) await new Promise(r => setTimeout(r, 1200));
 
         if (registry.has(entity)) continue;
         registry.add(entity);
 
         try {
-          const isFullAudit = ['UNGRD', 'CARDIQUE'].includes(entity);
-          const limit = 10; // Demo limit requested by user
-          
           const phaseMessage = lang === 'ES' 
-            ? `[Fase ${i+1}/${topEntities.length}] Analizando ${entity}: Buscando similitudes semánticas...`
-            : `[Phase ${i+1}/${topEntities.length}] Analyzing ${entity}: Detecting semantic similarities...`;
+            ? `[Fase ${i+1}/${topEntities.length}] Escrutinio Forense: ${entity}...`
+            : `[Phase ${i+1}/${topEntities.length}] Forensic Scrutiny: ${entity}...`;
             
           setStatusMessage(phaseMessage);
           
-          const contracts = await fetchContractsByEntity(entity, limit);
+          // Download 50 contracts to find enough "troublesome" patterns
+          const contracts = await fetchContractsByEntity(entity, 50);
           const groups = groupContractsByProvider(contracts);
           
           const analyzed: AnalysisResult[] = [];
           for (const [key, list] of groups) {
+            // Filter: Ignore irrelevant noise (single low-value contracts)
+            const totalVal = list.reduce((sum, c) => sum + (parseFloat(c.valor_del_contrato) || 0), 0);
+            if (list.length < 2 && totalVal < config.valueThreshold) continue;
+
              const subMessage = lang === 'ES' 
-              ? `Auditando Proveedor: ${list[0].nombre_del_contratista || 'Anónimo'}`
-              : `Auditing Provider: ${list[0].nombre_del_contratista || 'Anonymous'}`;
+              ? `Escrutinio: ${list[0].nombre_del_contratista || 'Anónimo'}`
+              : `Scrutiny: ${list[0].nombre_del_contratista || 'Anonymous'}`;
             setStatusMessage(subMessage);
             
-            const res = await analyzeContractGroup(key, list, config);
-            analyzed.push({ ...res, loadType: isFullAudit ? 'FULL' : 'REFERENCE' } as AnalysisResult);
-            await new Promise(r => setTimeout(r, 800));
+            let res = await getCachedAnalysis(key);
+            if (!res) {
+              res = await analyzeContractGroup(key, list, config);
+              await cacheAnalysis(res);
+            }
+            
+            // "Quiero que todos los que tengamos sean con problemas"
+            // Filter: Only keep high-risk findings (Red/Orange)
+            if (res.risk !== 'Green' || res.riskScore > 40) {
+              analyzed.push({ ...res, loadType: 'FULL' } as AnalysisResult);
+            }
+            
+            await new Promise(r => setTimeout(r, 200));
           }
 
           setResults(prev => {
-            const existingMap = new Map(prev.map(r => [r.groupKey, r]));
-            const nextResults = [...prev];
-
-            analyzed.forEach(newRes => {
-              const existing = existingMap.get(newRes.groupKey);
-              if (existing) {
-                if (newRes.loadType === 'FULL' && existing.loadType === 'REFERENCE') {
-                  const idx = nextResults.findIndex(r => r.groupKey === newRes.groupKey);
-                   nextResults[idx] = newRes;
-                }
-              } else {
-                nextResults.push(newRes);
-              }
-            });
-
-            const sortedResults = nextResults.sort((a, b) => b.riskScore - a.riskScore);
+            const nextResults = [...prev, ...analyzed];
+            const uniqueMap = new Map(nextResults.map(r => [r.groupKey, r]));
+            const sortedResults = Array.from(uniqueMap.values()).sort((a, b) => b.riskScore - a.riskScore);
             
-            // Persistence: Sync to localStorage
             localStorage.setItem('GOB_IA_CACHE_V1', JSON.stringify({
               results: sortedResults,
               health: systemHealth,
@@ -153,7 +178,7 @@ export default function App() {
             return sortedResults;
           });
         } catch (e) {
-          console.warn(`Node ${entity} skipped: link variance.`);
+          console.warn(`Entity ${entity} scan interrupted.`);
         }
       }
       setProgress(100);
@@ -207,7 +232,12 @@ export default function App() {
           : `Syncing: ${list[0].nombre_del_contratista || 'Node'}`;
         setStatusMessage(subMessage);
         
-        const res = await analyzeContractGroup(key, list, config);
+        // Cloud Cache Check
+        let res = await getCachedAnalysis(key);
+        if (!res) {
+          res = await analyzeContractGroup(key, list, config);
+          await cacheAnalysis(res);
+        }
         analyzed.push(res);
         await new Promise(r => setTimeout(r, 800));
       }
@@ -229,15 +259,33 @@ export default function App() {
     setAgentLogs([]);
     
     try {
-      const { report, logs, memory } = await runCollaborativeAudit(result, lang);
+      const { report, logs, memory } = await runCollaborativeAudit(result, lang, (updatedLogs, updatedMemory) => {
+        setAgentLogs(updatedLogs);
+        setNeuralMemory(updatedMemory);
+      });
       setAiReport(report);
       setAgentLogs(logs);
       setNeuralMemory(memory);
     } catch (error) {
       console.error(error);
-      setAiReport(lang === 'ES' ? "Error en Síntesis de Auditoría." : "Audit Synthesis Failure.");
+      setAiReport(lang === 'ES' ? "Error en Síntesis de Auditoría. Verifique su conexión y API Key." : "Audit Synthesis Failure. Please check your connection and API Key.");
     } finally {
       setReportLoading(false);
+    }
+  }
+
+  async function handleSendMessage(text: string) {
+    if (!activeChatFinding || !selectedResult || !text.trim()) return;
+    const userMsg = { role: 'user' as const, content: text };
+    setChatMessages(prev => [...prev, userMsg]);
+    setChatLoading(true);
+    try {
+      const response = await chatAboutFinding(selectedResult, activeChatFinding, text, lang);
+      setChatMessages(prev => [...prev, { role: 'ai' as const, content: response }]);
+    } catch (e) {
+      setChatMessages(prev => [...prev, { role: 'ai' as const, content: lang === 'ES' ? 'Error al procesar consulta.' : 'Query error.' }]);
+    } finally {
+      setChatLoading(false);
     }
   }
 
@@ -319,11 +367,11 @@ export default function App() {
             <div className="w-1 h-6 bg-[#FCD059]" />
             <div className="w-1 h-6 bg-[#004884]" />
             <div className="w-1 h-6 bg-[#D12C26]" />
-            <span className="text-[11px] font-black tracking-widest ml-2">GOV.CO</span>
+            <span className="text-[11px] font-black tracking-widest ml-2">BHA</span>
           </div>
           <div className="h-4 w-px bg-white/20" />
-          <h1 className="text-[10px] font-bold tracking-widest text-white/90">
-            PRESIDENCIA DE LA REPÚBLICA | GOB_IA PRO
+          <h1 className="text-[10px] font-bold tracking-widest text-white/90 uppercase">
+            THEGU (El vigilante según la lengua Nassa) | GOB_IA PRO
           </h1>
         </div>
         <div className="flex items-center gap-6">
@@ -357,6 +405,7 @@ export default function App() {
               { id: 'NEURAL', icon: Fingerprint, label: t.nav.hub },
               { id: 'CORTEX', icon: Cpu, label: t.nav.nodes },
               { id: 'HISTORY', icon: History, label: t.nav.logs },
+              { id: 'KNOWLEDGE', icon: BookOpen, label: t.nav.knowledge },
               { id: 'ABOUT', icon: Landmark, label: t.nav.about }
             ].map(item => (
               <button
@@ -707,6 +756,22 @@ export default function App() {
                 </div>
               </motion.section>
             )}
+
+            {activeView === 'KNOWLEDGE' && (
+              <motion.section 
+                key="knowledge"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="h-[calc(100vh-160px)]"
+              >
+                <KnowledgeBase 
+                  results={results} 
+                  onRetroactiveAudit={handleRetroactiveAudit}
+                  lang={lang}
+                />
+              </motion.section>
+            )}
           </AnimatePresence>
         </div>
       </main>
@@ -762,6 +827,114 @@ export default function App() {
                   ))}
                 </div>
 
+                {/* Technical Evidence */}
+                <div className="space-y-8 bg-gray-50 p-8 border border-gray-100 relative overflow-hidden">
+                  <div className="absolute top-0 right-0 p-4 opacity-5">
+                    <Database size={120} />
+                  </div>
+                  <div className="flex items-center gap-4 relative z-10">
+                    <div className="w-10 h-10 bg-[#004884] text-white flex items-center justify-center">
+                      <Terminal size={20} />
+                    </div>
+                    <div>
+                      <h4 className="text-[12px] font-black text-[#004884] uppercase tracking-widest">{lang === 'ES' ? 'EVIDENCIA TÉCNICA DETALLADA' : 'DETAILED TECHNICAL EVIDENCE'}</h4>
+                      <p className="text-[10px] text-gray-400 font-bold uppercase">{selectedResult.contracts.length} contratos bajo escrutinio vectorial</p>
+                    </div>
+                  </div>
+                  
+                  <div className="grid gap-4 relative z-10">
+                    {selectedResult.detailedFindings?.map((finding, idx) => {
+                      const contractData = selectedResult.contracts.find(c => c.id_contrato === finding.contractId);
+                      const isExpanded = expandedContract === finding.contractId;
+                      
+                      return (
+                        <div key={idx} className="bg-white border-l-4 border-[#004884] shadow-sm overflow-hidden transition-all">
+                          <div className="p-6 flex flex-col md:flex-row justify-between gap-6 hover:bg-gray-50/50">
+                            <div className="space-y-3 flex-1 text-left">
+                              <div className="flex items-center gap-3">
+                                 <span className="text-[10px] font-black bg-[#FCD059] px-2 py-1 leading-none uppercase">ID: {finding.contractId}</span>
+                                 <div className="flex flex-wrap gap-2">
+                                   {finding.reasons.map((reason, ridx) => (
+                                     <span key={ridx} className="text-[9px] font-bold text-red-600 bg-red-50 border border-red-100 px-2 py-0.5 uppercase flex items-center gap-1">
+                                       <AlertTriangle size={8} /> {reason}
+                                     </span>
+                                   ))}
+                                 </div>
+                              </div>
+                              <p className="text-[12px] font-medium text-[#004884] uppercase tracking-tight line-clamp-2">
+                                {contractData?.objeto_del_contrato}
+                              </p>
+                            </div>
+                            <div className="shrink-0 flex items-center gap-3">
+                               <button 
+                                 onClick={() => setExpandedContract(isExpanded ? null : finding.contractId)}
+                                 className="text-[10px] font-black text-gray-500 hover:text-[#004884] flex items-center gap-1 uppercase"
+                               >
+                                 {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />} {isExpanded ? (lang === 'ES' ? 'Ocultar' : 'Hide') : (lang === 'ES' ? 'Detalles' : 'Details')}
+                               </button>
+                               <button 
+                                 onClick={() => { setActiveChatFinding(finding); setChatMessages([]); }}
+                                 className="text-[10px] font-black bg-[#004884] text-white px-3 py-2 flex items-center gap-2 uppercase hover:bg-black transition-colors"
+                               >
+                                 <Zap size={12} /> {lang === 'ES' ? 'Consultar Auditor' : 'Ask Auditor'}
+                               </button>
+                            </div>
+                          </div>
+                          
+                          <AnimatePresence>
+                            {isExpanded && contractData && (
+                              <motion.div 
+                                initial={{ height: 0, opacity: 0 }}
+                                animate={{ height: 'auto', opacity: 1 }}
+                                exit={{ height: 0, opacity: 0 }}
+                                className="border-t border-gray-100 bg-gray-50/30 overflow-hidden"
+                              >
+                                <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6 text-[11px] text-left">
+                                   <div className="space-y-4">
+                                      <p className="text-gray-400 font-bold uppercase tracking-widest leading-none mb-4">{lang === 'ES' ? 'INFORMACIÓN CONTRACTUAL' : 'CONTRACT INFORMATION'}</p>
+                                      <div className="grid grid-cols-2 gap-y-4 gap-x-6">
+                                         <div>
+                                            <p className="font-bold text-[#004884] uppercase mb-1">{lang === 'ES' ? 'Valor Adjudicado' : 'Awarded Value'}</p>
+                                            <p className="font-mono text-base">${parseFloat(contractData.valor_del_contrato).toLocaleString()}</p>
+                                         </div>
+                                         <div>
+                                            <p className="font-bold text-[#004884] uppercase mb-1">{lang === 'ES' ? 'Modalidad' : 'Modality'}</p>
+                                            <p className="uppercase leading-tight">{contractData.modalidad_de_contratacion}</p>
+                                         </div>
+                                         <div>
+                                            <p className="font-bold text-[#004884] uppercase mb-1">{lang === 'ES' ? 'Fecha de Firma' : 'Signing Date'}</p>
+                                            <p>{new Date(contractData.fecha_de_firma).toLocaleDateString()}</p>
+                                         </div>
+                                         <div>
+                                            <p className="font-bold text-[#004884] uppercase mb-1">{lang === 'ES' ? 'Ubicación' : 'Location'}</p>
+                                            <p className="uppercase">{contractData.departamento} | {contractData.ciudad}</p>
+                                         </div>
+                                      </div>
+                                   </div>
+                                   <div className="space-y-2">
+                                      <p className="text-gray-400 font-bold uppercase tracking-widest mb-4 leading-none">{lang === 'ES' ? 'OBJETO TÉCNICO (INTEGRO)' : 'FULL TECHNICAL OBJECT'}</p>
+                                      <div className="text-gray-600 leading-relaxed bg-white border border-gray-100 p-4 rounded shadow-inner max-h-48 overflow-y-auto">
+                                        {contractData.objeto_del_contrato}
+                                      </div>
+                                   </div>
+                                   <div className="md:col-span-2 flex justify-end pt-4 border-t border-gray-100">
+                                      <button 
+                                        onClick={() => window.open(`https://www.secop.gov.co/Consultas/busqueda/detalle-del-proceso.aspx?IdProcess=${finding.contractId}`, '_blank')}
+                                        className="text-[10px] font-black text-[#004884] hover:underline flex items-center gap-1 uppercase"
+                                      >
+                                        <ExternalLink size={12} /> SECOP II DIGITAL FILE
+                                      </button>
+                                   </div>
+                                </div>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 {/* Report Content */}
                 <div className="space-y-12">
                    <div className="flex items-center gap-4">
@@ -770,9 +943,21 @@ export default function App() {
                    </div>
 
                    {reportLoading ? (
-                    <div className="py-24 flex flex-col items-center justify-center border-2 border-dashed border-gray-100 rounded-lg">
-                       <Loader2 className="animate-spin text-[#004884] mb-6" size={48} />
-                       <p className="text-[12px] font-bold uppercase tracking-[0.4em] text-[#004884] animate-pulse">{lang === 'ES' ? 'PROCESANDO EVIDENCIA...' : 'PROCESSING EVIDENCE...'}</p>
+                    <div className="py-24 flex flex-col items-center justify-center border-2 border-dashed border-gray-100 rounded-lg bg-gray-50/30 overflow-hidden relative">
+                       <div className="absolute inset-0 opacity-10">
+                          <AgentOffice logs={agentLogs} />
+                       </div>
+                       <Loader2 className="animate-spin text-[#004884] mb-6 relative z-10" size={48} />
+                       <p className="text-[12px] font-bold uppercase tracking-[0.4em] text-[#004884] animate-pulse relative z-10">
+                         {lang === 'ES' ? 'PROCESANDO EVIDENCIA Y NORMAS JURÍDICAS...' : 'PROCESSING EVIDENCE AND LEGAL STANDARDS...'}
+                       </p>
+                       <div className="mt-8 max-w-sm w-full space-y-2 relative z-10 px-6">
+                          {agentLogs.slice(-2).map((log, i) => (
+                            <p key={i} className="text-[10px] font-mono text-gray-500 text-center animate-in fade-in slide-in-from-bottom-1 uppercase">
+                               [{log.agent}] {log.message}
+                            </p>
+                          ))}
+                       </div>
                     </div>
                   ) : aiReport ? (
                     <div className="flex flex-col gap-8">
@@ -847,9 +1032,103 @@ export default function App() {
                     </button>
                   )}
                 </div>
+
+                <div className="py-20 text-center border-t border-gray-50">
+                    <p className="text-[10px] font-mono text-gray-300 uppercase tracking-widest italic">
+                      Fin del Expediente Técnico - Protocolo de Seguridad BHA-2026-X
+                    </p>
+                </div>
               </div>
 
-              <div className="p-8 border-t-2 border-[#F2F2F2] bg-white flex gap-6">
+              <AnimatePresence>
+                {activeChatFinding && (
+                  <motion.div 
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+                  >
+                    <motion.div 
+                      initial={{ scale: 0.9, y: 20 }}
+                      animate={{ scale: 1, y: 0 }}
+                      exit={{ scale: 0.9, y: 20 }}
+                      className="bg-white w-full max-w-lg h-[600px] shadow-2xl flex flex-col border-4 border-[#004884] overflow-hidden"
+                    >
+                      <div className="p-4 bg-[#004884] text-white flex justify-between items-center shrink-0">
+                        <div className="flex items-center gap-2">
+                          <Zap size={18} className="text-[#FCD059]" />
+                          <span className="text-[11px] font-black tracking-widest uppercase truncate max-w-[300px]">AUDITORÍA INTERACTIVA // ID: {activeChatFinding.contractId}</span>
+                        </div>
+                        <button onClick={() => { setActiveChatFinding(null); setChatMessages([]); }} className="hover:rotate-90 transition-transform p-1">
+                          <X size={20} />
+                        </button>
+                      </div>
+                      
+                      <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gray-50 custom-scrollbar scroll-smooth">
+                        <div className="bg-blue-50 border-l-4 border-blue-400 p-4 text-[10px] text-blue-700 font-medium leading-relaxed font-sans">
+                          {lang === 'ES' 
+                            ? 'El auditor tiene el contexto completo de este contrato y el historial del proveedor. Pregunta sobre legalidad, riesgos técnicos o comparativa semántica.' 
+                            : 'The auditor has full context of this contract and provider history. Ask about legality, technical risks, or semantic comparison.'}
+                        </div>
+                        
+                        {chatMessages.map((msg, idx) => (
+                          <div key={idx} className={cn("flex w-full", msg.role === 'user' ? "justify-end" : "justify-start")}>
+                            <div className={cn(
+                              "max-w-[90%] p-4 text-[11px] font-medium leading-relaxed shadow-sm font-sans",
+                              msg.role === 'user' 
+                                ? "bg-[#004884] text-white rounded-l-xl rounded-tr-xl" 
+                                : "bg-white border border-gray-200 text-gray-800 rounded-r-xl rounded-tl-xl text-left"
+                            )}>
+                              <ReactMarkdown>{msg.content}</ReactMarkdown>
+                            </div>
+                          </div>
+                        ))}
+                        {chatLoading && (
+                          <div className="flex justify-start">
+                            <div className="bg-white border border-gray-200 p-4 rounded-xl flex gap-2">
+                              <div className="flex gap-1">
+                                 <span className="w-1.5 h-1.5 bg-[#004884] rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                                 <span className="w-1.5 h-1.5 bg-[#004884] rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                                 <span className="w-1.5 h-1.5 bg-[#004884] rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        <div id="chat-bottom" />
+                      </div>
+                      
+                      <form 
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          const form = e.target as HTMLFormElement;
+                          const input = form.elements.namedItem('message') as HTMLInputElement;
+                          if (input.value.trim()) {
+                            handleSendMessage(input.value);
+                            input.value = '';
+                          }
+                        }}
+                        className="p-4 border-t border-gray-200 bg-white flex gap-2 shrink-0"
+                      >
+                        <input 
+                          name="message"
+                          autoComplete="off"
+                          placeholder={lang === 'ES' ? 'Escribe tu consulta técnica...' : 'Type your technical query...'}
+                          className="flex-1 bg-gray-100 border-none px-4 py-3 text-[11px] font-medium focus:outline-none focus:ring-2 focus:ring-[#004884] transition-all"
+                        />
+                        <button 
+                          type="submit" 
+                          disabled={chatLoading}
+                          className="bg-[#004884] text-white px-6 py-2 text-[10px] font-black uppercase hover:bg-black transition-colors disabled:opacity-50"
+                        >
+                          {lang === 'ES' ? 'ENVIAR' : 'SEND'}
+                        </button>
+                      </form>
+                    </motion.div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <div className="p-8 border-t-2 border-[#F2F2F2] bg-white flex gap-6 mt-auto shrink-0">
                 <button onClick={handleExportCSV} className="gov-button flex-1 h-14 flex items-center justify-center gap-3">
                   <Download size={18} /> {lang === 'ES' ? 'DESCARGAR DOSSIER PROBATORIO' : 'DOWNLOAD EVIDENCE DOSSIER'}
                 </button>

@@ -1,5 +1,5 @@
 {
   "name": "Remix: GobIA Auditor",
-  "description": "Sistema de auditoría forense con IA para la detección de fraccionamiento contractual en SECOP II.",
+  "description": "Sistema de auditoría forense con IA para la detección de fraccionamiento contractual en SECOP II con caché colaborativa en la nube y optimización de modelos.",
   "requestFramePermissions": []
 }

@@ -1,6 +1,7 @@
 
 import { pipeline, env } from '@huggingface/transformers';
 import { generateForensicReport } from './gemini';
+import { getCachedReport, cacheReport } from './firebase';
 
 // Configuration for Transformers.js
 env.allowLocalModels = false; // Force fetching from HF Hub for now to simplify
@@ -95,9 +96,24 @@ class NeuralManager {
 
     if (this.activeProvider === ModelProvider.GEMINI) {
       if (options?.type === 'FORENSIC') {
-        const report = await generateForensicReport(options.result, prompt, options.lang);
+        const groupKey = options.result.groupKey;
+        
+        // 1. Check Cloud Cache
+        const cachedReport = await getCachedReport(groupKey);
+        if (cachedReport) {
+          const latency = Date.now() - startTime;
+          this.updateMetrics(0, latency, model); // Zero tokens for cache hit
+          return cachedReport;
+        }
+
+        // 2. Generate new if not cached
+        const report = await generateForensicReport(options.result, options.lang);
         const latency = Date.now() - startTime;
         this.updateMetrics(tokens, latency, model);
+        
+        // 3. Save to Cloud Cache
+        await cacheReport(groupKey, report);
+        
         return report;
       }
     }

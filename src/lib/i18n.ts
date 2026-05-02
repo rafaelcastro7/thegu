@@ -8,7 +8,8 @@ export const translations = {
       hub: 'CENTRO ANALÍTICO',
       nodes: 'ESTADO DE LA RED',
       logs: 'HISTORIAL TÉCNICO',
-      about: 'AYUDA Y MANUAL'
+      about: 'AYUDA Y MANUAL',
+      knowledge: 'BASE DE INTELIGENCIA'
     },
     header: {
       status: 'Estado del Servicio',
@@ -60,22 +61,22 @@ export const translations = {
       cluster_viz: 'Mapa de Colaboración de Agentes'
     },
     about: {
-      title: 'MANUAL TÉCNICO Y DE USUARIO',
-      mission: 'Misión del Proyecto',
-      mission_text: 'GOB_IA es una plataforma de vanguardia diseñada para la detección proactiva de irregularidades en la contratación pública colombiana, utilizando modelos de lenguaje de gran escala (LLMs) y análisis vectorial.',
-      how_it_works: '¿Cómo funciona?',
-      step_1: 'Ingesta de Datos',
-      step_1_text: 'El sistema se conecta en tiempo real a la API de SECOP II para obtener los últimos contratos firmados por entidades gubernamentales.',
-      step_2: 'Análisis Semántico',
-      step_2_text: 'Utilizamos embeddings de Google Gemini para convertir el objeto de cada contrato en un vector matemático. Esto permite detectar cuando un proveedor recibe múltiples contratos con descripciones casi idénticas en ventanas de tiempo sospechosas.',
-      step_3: 'Auditoría de Agentes',
-      step_3_text: 'Tres agentes de IA (Neural Auditor, Vector Validator, Pattern Sentinel) revisan cada cluster para asignar un nivel de riesgo basado en el histórico y la probabilidad de colusión.',
-      manual: 'Guía de Usuario',
-      instruction_search: 'Usa el buscador para analizar entidades específicas por su nombre en SECOP II.',
-      instruction_risk: 'Haz clic en cualquier tarjeta de resultado para ver el análisis detallado y la justificación de la IA.',
-      instruction_cache: 'Los resultados se guardan localmente para rapidez. Usa "REINICIAR CACHE" para forzar un nuevo escaneo.',
-      juror_note: 'Nota para el Jurado',
-      juror_text: 'Esta herramienta no solo automatiza la revisión física, sino que encuentra relaciones semánticas que escapan al ojo humano y a las búsquedas tradicionales por palabras clave.'
+      title: 'MANUAL TÉCNICO BHA (Bot de Hallazgos y Auditoría)',
+      mission: 'Misión de Vigilancia',
+      mission_text: 'BHA es una plataforma de inteligencia forense diseñada para la detección proactiva de fraccionamiento contractual y colusión en la contratación pública colombiana, utilizando Redes Neuronales y Análisis Vectorial.',
+      how_it_works: 'Arquitectura del Sistema',
+      step_1: 'Ingesta Bio-Inspirada',
+      step_1_text: 'El sistema descarga en tiempo real procesos de SECOP II, analizando no solo el monto sino la densidad técnica del objeto contractual.',
+      step_2: 'Procesamiento Semántico',
+      step_2_text: 'Convertimos el lenguaje natural de cada contrato en embeddings vectoriales (768 dimensiones). Esto permite identificar similitudes conceptuales que los algoritmos tradicionales ignoran.',
+      step_3: 'Auditoría Multi-Agente',
+      step_3_text: 'Un enjambre de 3 agentes (Auditor, Validador y Sentinel) colaboran para calificar el riesgo. Si el patrón se repite, se activa la alerta "ROJA" de fraccionamiento.',
+      manual: 'Guía de Operación',
+      instruction_search: 'Busque entidades nacionales por su nombre oficial. El sistema descargará y procesará automáticamente los últimos 30-100 procesos.',
+      instruction_risk: 'Revise los hallazgos en rojo. Cada uno cuenta con un "Auditor Interactivo" (Chatbot) que le explicará la base jurídica y técnica del riesgo encontrado.',
+      instruction_cache: 'Utilizamos Caché Colaborativa en la nube para sincronizar hallazgos entre diferentes auditores de la red BHA.',
+      juror_note: 'Nota Técnica BHA',
+      juror_text: 'BHA (Thegu en lengua Nassa: "Vigilante") no es un buscador; es un motor de inferencia que detecta cuando se oculta un gran contrato tras múltiples contratos pequeños para evadir la licitación pública.'
     }
   },
   EN: {
@@ -84,7 +85,8 @@ export const translations = {
       hub: 'AI HUB',
       nodes: 'AI PANEL',
       logs: 'HISTORY',
-      about: 'HELP & MANUAL'
+      about: 'HELP & MANUAL',
+      knowledge: 'INTELLIGENCE BASE'
     },
     header: {
       status: 'System Status',
@@ -136,22 +138,22 @@ export const translations = {
       cluster_viz: 'Agent Collaboration Map'
     },
     about: {
-      title: 'TECHNICAL & USER MANUAL',
-      mission: 'Project Mission',
-      mission_text: 'GOB_IA is a cutting-edge platform designed for proactive detection of irregularities in Colombian public procurement, using large language models (LLMs) and vector analysis.',
-      how_it_works: 'How it works?',
-      step_1: 'Data Ingestion',
-      step_1_text: 'The system connects in real-time to the SECOP II API to fetch the latest contracts signed by government entities.',
-      step_2: 'Semantic Analysis',
-      step_2_text: "We use Google Gemini embeddings to convert each contract's object into a mathematical vector. This enables detecting when a provider receives multiple contracts with nearly identical descriptions in suspicious time frames.",
-      step_3: 'Agent Audit',
-      step_3_text: 'Three AI agents (Neural Auditor, Vector Validator, Pattern Sentinel) review each cluster to assign a risk level based on history and collusion probability.',
-      manual: 'User Guide',
-      instruction_search: 'Use the search bar to analyze specific entities by their name in SECOP II.',
-      instruction_risk: 'Click on any result card to see detailed analysis and AI justification.',
-      instruction_cache: 'Results are saved locally for speed. Use "RESET CACHE" to force a new scan.',
-      juror_note: 'Note for the Jury',
-      juror_text: 'This tool does not just automate physical review; it finds semantic relationships that escape the human eye and traditional keyword searches.'
+      title: 'BHA TECHNICAL MANUAL (Audit & Findings Bot)',
+      mission: 'Vigilance Mission',
+      mission_text: 'BHA is a forensic intelligence platform designed for the proactive detection of contract splitting and collusion in Colombian public procurement, using Neural Networks and Vector Analysis.',
+      how_it_works: 'System Architecture',
+      step_1: 'Bio-Inspired Ingestion',
+      step_1_text: 'The system downloads SECOP II processes in real-time, analyzing not just the amount but the technical density of the contractual object.',
+      step_2: 'Semantic Processing',
+      step_2_text: 'We convert the natural language of each contract into vector embeddings (768 dimensions). This identifies conceptual similarities that traditional algorithms ignore.',
+      step_3: 'Multi-Agent Audit',
+      step_3_text: 'A swarm of 3 agents (Auditor, Validator, and Sentinel) collaborate to score risk. If the pattern repeats, a "RED" flag for contract splitting is triggered.',
+      manual: 'Operation Guide',
+      instruction_search: 'Search for national entities by their official name. The system will automatically download and process the last 30-100 records.',
+      instruction_risk: 'Review findings in red. Each one has an "Interactive Auditor" (Chatbot) that will explain the legal and technical basis of the detected risk.',
+      instruction_cache: 'We use Cloud Collaborative Cache to sync findings between different auditors in the BHA network.',
+      juror_note: 'BHA Technical Note',
+      juror_text: 'BHA (Thegu in Nassa language: "Watcher") is not a search engine; it is an inference engine that detects when a large contract is hidden behind multiple small contracts to evade public bidding.'
     }
   }
 };
