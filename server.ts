@@ -1,47 +1,27 @@
-import express from "express";
-import { createServer as createViteServer } from "vite";
-import path from "path";
-import { fileURLToPath } from "url";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import { createApp } from "./src/server/app";
+import { config } from "./src/server/config";
+import { closeDatabase, initDatabase } from "./src/server/database";
 
 async function startServer() {
-  const app = express();
-  const PORT = 3000;
+  await initDatabase();
+  const app = await createApp();
 
-  app.use(express.json());
-
-  // Logging endpoint
-  app.post("/api/logs", (req, res) => {
-    const { action, details, timestamp, user } = req.body;
-    console.log(`[AUDIT] [${timestamp}] ACTION: ${action} | USER: ${user} | DETAILS: ${JSON.stringify(details)}`);
-    res.json({ status: "ok" });
+  const server = app.listen(config.port, "0.0.0.0", () => {
+    console.log(`Server running on http://0.0.0.0:${config.port} (Ollama: ${config.ollamaHost})`);
   });
 
-  // Simple health check
-  app.get("/api/health", (req, res) => {
-    res.json({ status: "ok" });
-  });
-
-  // Vite middleware for development
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
+  const shutdown = async () => {
+    server.close(async () => {
+      await closeDatabase();
+      process.exit(0);
     });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
-  }
+  };
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
 }
 
-startServer();
+startServer().catch((error) => {
+  console.error("Failed to start server:", error);
+  process.exit(1);
+});

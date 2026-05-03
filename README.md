@@ -1,33 +1,59 @@
-# GobIA Auditor: Detección Forense de Fraccionamiento Contractual
+# GobIA Auditor
 
-Sitema de inteligencia artificial y analítica preventiva desarrollado para la detección de patrones de evasión y anomalías en la contratación pública colombiana (SECOP II).
+Sistema de analítica forense para detectar posibles patrones de fraccionamiento contractual en SECOP II. La aplicación combina ingesta de contratos, análisis heurístico, RAG jurídico y generación de informes técnicos con modelos locales.
 
-## 💡 El Problema
-El fraccionamiento contractual es una práctica donde se divide una contratación única en múltiples contratos de menor cuantía para eludir procesos de licitación pública, afectando la transparencia y eficiencia del gasto público.
+## Stack Actual
 
-## 🚀 Solución: GobIA Auditor
-GobIA Auditor utiliza un pipeline de IA Forense:
-1. **Ingesta:** Extracción en tiempo real vía API Socrata (SECOP II).
-2. **Heurística:** Agrupamiento por proveedor/entidad y cálculo de ventanas temporales.
-3. **Análisis Semántico:** Uso de `text-embedding-04` para detectar objetos contractuales idénticos o sospechosamente similares.
-4. **RAG Jurídico:** Generación de informes indiciarios basados en la Ley 80 de 1993, Ley 1474 de 2011 y conceptos de Colombia Compra Eficiente.
+- Frontend: React + Tailwind CSS + Framer Motion
+- Backend: Express + Vite middleware
+- Base de datos: PostgreSQL para caché de análisis, reportes y contexto RAG
+- Modelos locales: Ollama (`qwen3:4b` y `nomic-embed-text`)
+- Fuente de datos: datos.gov.co / SECOP II
+- Validación: TypeScript + Playwright e2e
 
-## 🛠 Stack Tecnológico
-- **Cerebro:** Gemini 2.5 Flash (Google GenAI SDK).
-- **Embeddings:** Gemini Embedding 2 Preview.
-- **Frontend:** React + Tailwind CSS + Framer Motion (Diseño Estilo "Brutalist Forense").
-- **Backend:** Express/Node.js (Proxy API).
-- **Data Source:** datos.gov.co (Socrata REST API).
+## Componentes Clave
 
-## 🛠 Arquitectura del Sistema
-- `/src/lib/secop.ts`: Gestión de conexión con el dataset nacional.
-- `/src/lib/analysis.ts`: Motor de lógica de negocio y semáforos de riesgo.
-- `/src/lib/gemini.ts`: Integración con LLM y generación de embeddings.
-- `/src/lib/ragManager.ts`: Base de conocimiento legal para justificación de hallazgos.
+- `server.ts`: punto de arranque del servidor
+- `src/server/*`: configuración, rutas API, PostgreSQL, proxy Ollama y RAG persistente
+- `src/lib/secop.ts`: consulta SECOP segura y normalización de contratos
+- `src/lib/analysis.ts`: motor de riesgo, similitud semántica y hallazgos
+- `src/lib/ragManager.ts`: cliente RAG con fallback local
+- `src/lib/legalKnowledgeBase.ts`: base legal inicial para indexación vectorial
+- `src/lib/neuralManager.ts`: orquestación de generación y caché de reportes
 
-## 📦 Instalación
+## Desarrollo Local
+
+1. Instala dependencias:
+
 ```bash
 npm install
+```
+
+2. Configura variables de entorno usando `.env.example`.
+
+3. Asegura que PostgreSQL y Ollama estén disponibles. Ollama debe tener cargados:
+
+```bash
+ollama pull qwen3:4b
+ollama pull nomic-embed-text
+```
+
+4. Inicia la app:
+
+```bash
 npm run dev
 ```
-*Requiere `GEMINI_API_KEY` configurada en las variables de entorno.*
+
+## Validación
+
+```bash
+npm run lint
+npm run build
+npm run test:e2e
+```
+
+Los e2e cubren health del backend, caché PostgreSQL, proxy SECOP, RAG persistente y generación de informe desde la UI.
+
+## Docker
+
+El repo incluye `Dockerfile`, `docker-compose.yml` y `SETUP_LOCAL.md` para levantar la app contra PostgreSQL y Ollama en entorno local. El contenedor espera que Ollama esté disponible en `OLLAMA_HOST`.

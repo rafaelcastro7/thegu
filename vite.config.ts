@@ -1,24 +1,51 @@
-import tailwindcss from '@tailwindcss/vite';
-import react from '@vitejs/plugin-react';
-import path from 'path';
-import {defineConfig, loadEnv} from 'vite';
+import tailwindcss from "@tailwindcss/vite";
+import react from "@vitejs/plugin-react";
+import path from "path";
+import { defineConfig } from "vite";
 
-export default defineConfig(({mode}) => {
-  const env = loadEnv(mode, '.', '');
-  return {
-    plugins: [react(), tailwindcss()],
-    define: {
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+export default defineConfig({
+  plugins: [react(), tailwindcss()],
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "."),
     },
-    resolve: {
-      alias: {
-        '@': path.resolve(__dirname, '.'),
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes("node_modules/react") || id.includes("node_modules/react-dom")) {
+            return "react-vendor";
+          }
+
+          if (id.includes("framer-motion") || id.includes("motion")) {
+            return "motion-vendor";
+          }
+
+          if (id.includes("recharts")) {
+            return "charts-vendor";
+          }
+
+          if (id.includes("html2canvas")) {
+            return "html2canvas-vendor";
+          }
+
+          if (id.includes("jspdf")) {
+            return "jspdf-vendor";
+          }
+
+          if (id.includes("@huggingface/transformers")) {
+            return "transformers-vendor";
+          }
+
+          if (id.includes("onnxruntime-web")) {
+            return "onnx-vendor";
+          }
+        },
       },
     },
-    server: {
-      // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
-      hmr: process.env.DISABLE_HMR !== 'true',
-    },
-  };
+  },
+  server: {
+    hmr: process.env.DISABLE_HMR !== "true",
+  },
 });

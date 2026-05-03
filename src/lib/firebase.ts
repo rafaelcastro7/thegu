@@ -1,72 +1,52 @@
-import { initializeApp } from 'firebase/app';
-import { getFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
-import firebaseConfig from '../../firebase-applet-config.json';
 import { AnalysisResult } from './analysis';
 
-const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app);
-
-/**
- * Caches an analysis result in Firestore
- */
 export async function cacheAnalysis(result: AnalysisResult) {
   try {
-    const docRef = doc(db, "analysis_cache", result.groupKey);
-    await setDoc(docRef, {
-      ...result,
-      timestamp: Date.now()
-    }, { merge: true });
-  } catch (error) {
-    console.error("Firestore Cache Save Error:", error);
-  }
-}
-
-/**
- * Retrieves a cached analysis result from Firestore
- */
-export async function getCachedAnalysis(groupKey: string): Promise<AnalysisResult | null> {
-  try {
-    const docRef = doc(db, "analysis_cache", groupKey);
-    const docSnap = await getDoc(docRef);
-    if (docSnap.exists()) {
-      return docSnap.data() as AnalysisResult;
-    }
-    return null;
-  } catch (error) {
-    console.error("Firestore Cache Load Error:", error);
-    return null;
-  }
-}
-
-/**
- * Caches an AI report in Firestore
- */
-export async function cacheReport(groupKey: string, report: string) {
-  try {
-    const docRef = doc(db, "report_cache", groupKey);
-    await setDoc(docRef, {
-      report,
-      timestamp: Date.now()
+    await fetch('/api/cache/analysis', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ groupKey: result.groupKey, data: result }),
     });
   } catch (error) {
-    console.error("Firestore Report Cache Save Error:", error);
+    console.error("Local Cache Save Error:", error);
   }
 }
 
-/**
- * Retrieves a cached AI report from Firestore
- */
-export async function getCachedReport(groupKey: string): Promise<string | null> {
+export async function getCachedAnalysis(groupKey: string): Promise<AnalysisResult | null> {
   try {
-    const docRef = doc(db, "report_cache", groupKey);
-    const docSnap = await getDoc(docRef);
-    
-    if (docSnap.exists()) {
-      return docSnap.data().report;
+    const res = await fetch(`/api/cache/analysis/${encodeURIComponent(groupKey)}`);
+    if (res.ok) {
+      return await res.json() as AnalysisResult;
     }
     return null;
   } catch (error) {
-    console.error("Firestore Report Cache Load Error:", error);
+    console.error("Local Cache Load Error:", error);
+    return null;
+  }
+}
+
+export async function cacheReport(groupKey: string, report: string) {
+  try {
+    await fetch('/api/cache/report', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ groupKey, report }),
+    });
+  } catch (error) {
+    console.error("Local Report Cache Save Error:", error);
+  }
+}
+
+export async function getCachedReport(groupKey: string): Promise<string | null> {
+  try {
+    const res = await fetch(`/api/cache/report/${encodeURIComponent(groupKey)}`);
+    if (res.ok) {
+      const data = await res.json();
+      return data.report;
+    }
+    return null;
+  } catch (error) {
+    console.error("Local Report Cache Load Error:", error);
     return null;
   }
 }

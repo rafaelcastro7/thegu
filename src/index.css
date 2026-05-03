@@ -1,57 +1,78 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;700&display=swap');
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Outfit", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
 
 @layer base {
   body {
-    @apply bg-[#F2F2F2] text-[#333333] font-sans antialiased;
+    @apply bg-[#0B0F19] text-gray-100 font-sans antialiased min-h-screen relative;
+    background-image: 
+      radial-gradient(circle at 15% 50%, rgba(99, 102, 241, 0.08) 0%, transparent 50%),
+      radial-gradient(circle at 85% 30%, rgba(168, 85, 247, 0.08) 0%, transparent 50%);
+    background-attachment: fixed;
   }
 }
 
 .gov-header {
-  @apply bg-[#004884] text-white border-b-4 border-[#FCD059];
+  @apply bg-white/5 backdrop-blur-md border-b border-white/10;
 }
 
 .gov-navbar {
-  @apply bg-white border-b border-[#E6E6E6] flex items-center px-8 h-12 shadow-sm;
+  @apply bg-[#111827]/80 backdrop-blur-xl border-b border-white/10 flex items-center px-8 h-16 shadow-2xl z-50 sticky top-0;
 }
 
 .gov-card {
-  @apply bg-white border border-[#E6E6E6] shadow-sm rounded-none transition-all hover:shadow-md;
+  @apply bg-white/5 backdrop-blur-xl border border-white/10 shadow-[0_8px_30px_rgb(0,0,0,0.12)] rounded-2xl transition-all duration-300 hover:shadow-[0_8px_30px_rgba(99,102,241,0.2)] hover:border-indigo-500/30 hover:-translate-y-1;
 }
 
 .gov-button {
-  @apply bg-[#004884] text-white px-6 py-2 font-bold uppercase text-[12px] hover:bg-[#003663] transition-colors border-2 border-[#004884] disabled:opacity-50;
+  @apply bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-6 py-2 font-bold uppercase text-[12px] rounded-full shadow-lg hover:shadow-indigo-500/25 transition-all duration-300 hover:scale-105 disabled:opacity-50 disabled:hover:scale-100;
 }
 
 .gov-button-outline {
-  @apply bg-white text-[#004884] px-6 py-2 font-bold uppercase text-[12px] border-2 border-[#004884] hover:bg-[#f0f7ff] transition-colors;
+  @apply bg-transparent text-indigo-400 px-6 py-2 font-bold uppercase text-[12px] border border-indigo-500/50 rounded-full hover:bg-indigo-500/10 hover:border-indigo-400 transition-all duration-300;
 }
 
 .header-label {
-  @apply text-[10px] uppercase font-bold tracking-widest text-[#004884] mb-1 block;
+  @apply text-[10px] uppercase font-bold tracking-widest text-indigo-400 mb-1 block;
 }
 
 .section-title {
-  @apply text-2xl font-black text-[#004884] uppercase tracking-tighter;
+  @apply text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-purple-400 uppercase tracking-tight;
 }
 
 .stat-card {
-  @apply p-6 bg-white border border-[#E6E6E6] border-l-4 border-l-[#004884] shadow-sm;
+  @apply p-6 bg-white/5 backdrop-blur-md border border-white/10 shadow-lg rounded-2xl relative overflow-hidden transition-all duration-500 hover:border-indigo-500/30;
+}
+
+.stat-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(99,102,241,0.8), transparent);
+  opacity: 0;
+  transition: opacity 0.5s;
+}
+
+.stat-card:hover::before {
+  opacity: 1;
 }
 
 .custom-scrollbar::-webkit-scrollbar {
-  width: 4px;
+  width: 6px;
 }
 .custom-scrollbar::-webkit-scrollbar-track {
-  background: #f1f1f1;
+  background: rgba(255, 255, 255, 0.02);
 }
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #004884;
+  background: rgba(99, 102, 241, 0.3);
+  border-radius: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(99, 102, 241, 0.6);
 }
 
 @keyframes scan-line {
@@ -71,7 +92,7 @@
   left: 0;
   right: 0;
   height: 20%;
-  background: linear-gradient(to bottom, transparent, rgba(0, 72, 132, 0.05), transparent);
+  background: linear-gradient(to bottom, transparent, rgba(99, 102, 241, 0.15), transparent);
   animation: scan-line 3s linear infinite;
   pointer-events: none;
 }

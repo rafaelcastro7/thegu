@@ -19,74 +19,112 @@ export interface Contract {
   year_fiscal?: string;
 }
 
-// Socrata API Endpoint for SECOP II
 const SECOP_II_API = "https://www.datos.gov.co/resource/p6dx-8zbt.json";
 
-export async function fetchContractsByEntity(entityName: string, limit: number = 100): Promise<Contract[]> {
-  const name = entityName.toUpperCase().trim();
-  // Consulta SoQL optimizada para Procesos de Contratación SECOP II
-  // Usamos 'entidad' en lugar de 'nombre_entidad' para este dataset
-  const entityFilter = `entidad like '%${name}%' OR nit_entidad like '%${name}%'`;
-  const query = `$where=${encodeURIComponent(entityFilter)}&$limit=${limit}&$order=precio_base DESC`;
-  const url = `${SECOP_II_API}?${query}`;
-  
+function isBrowserRuntime() {
+  return typeof window !== "undefined" && typeof document !== "undefined";
+}
+
+function normalizeEntityName(entityName: string) {
+  return entityName.toUpperCase().trim().replace(/\s+/g, " ");
+}
+
+function sanitizeLimit(limit: number) {
+  if (!Number.isFinite(limit)) return 50;
+  return Math.max(1, Math.min(100, Math.floor(limit)));
+}
+
+function escapeSoqlString(value: string) {
+  return value.replace(/'/g, "''");
+}
+
+function mapSecopRecord(record: Record<string, unknown>): Contract {
+  const value = (key: string) => record[key]?.toString();
+
+  return {
+    id_contrato: value("id_del_proceso") || "N/A",
+    nombre_entidad: value("entidad") || "ENTIDAD_DESCONOCIDA",
+    nit_entidad: value("nit_entidad") || "N/A",
+    departamento: value("departamento_entidad") || "N/A",
+    ciudad: value("ciudad_entidad") || "N/A",
+    nombre_del_contratista:
+      value("nombre_del_proveedor") && value("nombre_del_proveedor") !== "No Definido"
+        ? value("nombre_del_proveedor")!
+        : value("entidad") || "PROVEEDOR_NO_IDENTIFICADO",
+    documento_proveedor: value("nit_del_proveedor_adjudicado") || value("nit_entidad") || "0",
+    valor_del_contrato: value("precio_base") || "0",
+    fecha_de_firma: value("fecha_de_publicacion_del") || value("fecha_de_publicacion") || new Date().toISOString(),
+    objeto_del_contrato: value("descripci_n_del_procedimiento") || value("nombre_del_procedimiento") || "Sin descripción",
+    modalidad_de_contratacion: value("modalidad_de_contratacion") || "No definida",
+    estado_contrato: value("estado_resumen") || value("estado_del_procedimiento") || "Activo",
+  };
+}
+
+export async function fetchContractsFromSecop(entityName: string, limit: number = 100): Promise<Contract[]> {
+  const name = normalizeEntityName(entityName);
+  const safeLimit = sanitizeLimit(limit);
+  if (!name) return [];
+
+  const escapedName = escapeSoqlString(name);
+  const params = new URLSearchParams({
+    "$where": `entidad like '%${escapedName}%' OR nit_entidad like '%${escapedName}%'`,
+    "$limit": String(safeLimit),
+    "$order": "precio_base DESC",
+  });
+  const url = `${SECOP_II_API}?${params.toString()}`;
+
   try {
-    console.warn(`[AUDIT_INIT] Connecting to SECOP II Neural Node (p6dx-8zbt) for: ${name}`);
-    console.log(`[NETWORK_PULSE] GET ${url}`);
+    console.warn(`[AUDIT_INIT] Connecting to SECOP II for: ${name}`);
     const response = await fetch(url);
-    
+
     if (!response.ok) {
       const errorText = await response.text();
       console.error(`[SOCRATA_REJECT] Status ${response.status}: ${errorText}`);
-      throw new Error(`API SECOP Inalcanzable: ${response.status}`);
+      throw new Error(`SECOP API unavailable: ${response.status}`);
     }
-    
+
     const data = await response.json();
-    
-    if (!Array.isArray(data) || data.length === 0) {
-      console.warn(`[ZERO_RECORDS] No active processes found for: ${name}`);
-      return [];
-    }
+    if (!Array.isArray(data) || data.length === 0) return [];
 
-    console.log(`[INGESTAR_HALLAZGO] ${data.length} records retrieved from verified source.`);
-
-    return data.map((d: any) => ({
-      id_contrato: d.id_del_proceso || "N/A",
-      nombre_entidad: d.entidad || "ENTIDAD_DESCONOCIDA",
-      nit_entidad: d.nit_entidad || "N/A",
-      departamento: d.departamento_entidad || "N/A",
-      ciudad: d.ciudad_entidad || "N/A",
-      nombre_del_contratista: d.nombre_del_proveedor && d.nombre_del_proveedor !== "No Definido" 
-        ? d.nombre_del_proveedor 
-        : d.entidad, // Fallback to entity if vendor not defined (common in fractioning contexts)
-      documento_proveedor: d.nit_del_proveedor_adjudicado || d.nit_entidad || "0",
-      valor_del_contrato: d.precio_base?.toString() || "0",
-      fecha_de_firma: d.fecha_de_publicacion_del || d.fecha_de_publicacion || new Date().toISOString(),
-      objeto_del_contrato: d.descripci_n_del_procedimiento || d.nombre_del_procedimiento || "Sin descripción",
-      modalidad_de_contratacion: d.modalidad_de_contratacion || "No definida",
-      estado_contrato: d.estado_resumen || d.estado_del_procedimiento || "Activo"
-    }));
+    return data.map((record) => mapSecopRecord(record));
   } catch (error) {
-    console.error("[CRITICAL_FAIL] SECOP Connectivity Error:", error);
+    console.error("[SECOP_CONNECTIVITY_ERROR]", error);
+    return [];
+  }
+}
+
+export async function fetchContractsByEntity(entityName: string, limit: number = 100): Promise<Contract[]> {
+  if (!isBrowserRuntime()) {
+    return fetchContractsFromSecop(entityName, limit);
+  }
+
+  const params = new URLSearchParams({
+    entity: entityName,
+    limit: String(sanitizeLimit(limit)),
+  });
+
+  try {
+    const response = await fetch(`/api/secop/contracts?${params.toString()}`);
+    if (!response.ok) return [];
+    return await response.json();
+  } catch (error) {
+    console.error("[SECOP_BACKEND_PROXY_ERROR]", error);
     return [];
   }
 }
 
 export function groupContractsByProvider(contracts: Contract[]) {
   const groups: Record<string, Contract[]> = {};
-  
-  contracts.forEach(c => {
-    // Usamos documento_proveedor (NIT) o en su defecto el nombre para agrupar
-    const id = c.documento_proveedor || c.nit_entidad || "ID_GENERICO";
+
+  contracts.forEach((contract) => {
+    const id = contract.documento_proveedor || contract.nit_entidad || "ID_GENERICO";
     const key = `REF:${id}`;
     if (!groups[key]) groups[key] = [];
     groups[key].push({
-      ...c,
-      nombre_del_contratista: c.nombre_del_contratista || c.nombre_entidad || "PROVEEDOR_NO_IDENTIFICADO"
+      ...contract,
+      nombre_del_contratista: contract.nombre_del_contratista || contract.nombre_entidad || "PROVEEDOR_NO_IDENTIFICADO",
     });
   });
 
-  // Retornamos todos los grupos, priorizando los que tienen más contratos (mayor sospecha)
-  return Object.entries(groups)
-    .sort((a, b) => b[1].length - a[1].length);
+  return Object.entries(groups).sort((a, b) => b[1].length - a[1].length);
 }

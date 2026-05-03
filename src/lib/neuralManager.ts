@@ -1,14 +1,8 @@
-
-import { pipeline, env } from '@huggingface/transformers';
 import { generateForensicReport } from './gemini';
 import { getCachedReport, cacheReport } from './firebase';
 
-// Configuration for Transformers.js
-env.allowLocalModels = false; // Force fetching from HF Hub for now to simplify
-env.useBrowserCache = true;
-
 export enum ModelProvider {
-  GEMINI = 'GEMINI_CLOUD',
+  OLLAMA = 'OLLAMA_LOCAL',
   LOCAL_LLAMA = 'LOCAL_LLAMA', // We'll use a T5 model for local text generation
   CUSTOM_ON_PREM = 'CUSTOM_ON_PREM'
 }
@@ -34,7 +28,7 @@ export interface NeuralMetrics {
 
 class NeuralManager {
   private models: ModelConfig[] = [
-    { id: 'gemini-3-flash', name: 'Gemini 3 Flash (Cloud)', provider: ModelProvider.GEMINI, status: 'ONLINE', latency: 450, costPerToken: 0.0001, tokensUsed: 0, enabled: true },
+    { id: 'qwen3-4b', name: 'Qwen3 4B (Ollama)', provider: ModelProvider.OLLAMA, status: 'ONLINE', latency: 450, costPerToken: 0, tokensUsed: 0, enabled: true },
     { id: 't5-local', name: 'LaMini-T5 (Browser Node)', provider: ModelProvider.LOCAL_LLAMA, status: 'OFFLINE', latency: 120, costPerToken: 0, tokensUsed: 0, enabled: true },
     { id: 'custom-audit-v1', name: 'Custom Auditor (On-Prem)', provider: ModelProvider.CUSTOM_ON_PREM, status: 'ONLINE', latency: 850, costPerToken: 0.0005, tokensUsed: 0, enabled: false },
   ];
@@ -47,7 +41,7 @@ class NeuralManager {
     errorRate: 0
   };
 
-  private activeProvider: ModelProvider = ModelProvider.GEMINI;
+  private activeProvider: ModelProvider = ModelProvider.OLLAMA;
   private localPipeline: any = null;
 
   getModels() { return [...this.models]; }
@@ -75,6 +69,10 @@ class NeuralManager {
     if (this.activeProvider === ModelProvider.LOCAL_LLAMA) {
       try {
         if (!this.localPipeline) {
+          const { pipeline, env } = await import('@huggingface/transformers');
+          env.allowLocalModels = false;
+          env.useBrowserCache = true;
+
           const modelToUpdate = this.models.find(m => m.provider === ModelProvider.LOCAL_LLAMA);
           if (modelToUpdate) modelToUpdate.status = 'LOADING';
           
@@ -94,7 +92,7 @@ class NeuralManager {
       }
     }
 
-    if (this.activeProvider === ModelProvider.GEMINI) {
+    if (this.activeProvider === ModelProvider.OLLAMA) {
       if (options?.type === 'FORENSIC') {
         const groupKey = options.result.groupKey;
         
