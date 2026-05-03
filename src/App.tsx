@@ -502,11 +502,7 @@ export default function App() {
 
           <div className="flex items-center gap-2">
             {[
-              { id: 'DASHBOARD', icon: Target, label: t.nav.intel },
-              { id: 'CORTEX', icon: Cpu, label: t.nav.nodes },
-              { id: 'HISTORY', icon: History, label: t.nav.logs },
-              { id: 'KNOWLEDGE', icon: BookOpen, label: t.nav.knowledge },
-              { id: 'ABOUT', icon: Landmark, label: t.nav.about }
+              { id: 'DASHBOARD', icon: Target, label: t.nav.intel }
             ].map(item => (
               <button
                 key={item.id}
@@ -534,7 +530,9 @@ export default function App() {
               </div>
            </div>
            <button 
+             data-testid="advanced-console-button"
              onClick={() => setShowSettings(true)}
+             title={lang === 'ES' ? 'Configuracion avanzada' : 'Advanced configuration'}
              className="w-10 h-10 flex items-center justify-center text-[#666666] hover:text-[#004884] hover:bg-gray-100 transition-all border border-[#E6E6E6]"
            >
              <Settings size={18} />
@@ -589,24 +587,6 @@ export default function App() {
       <main className="flex-1 overflow-y-auto custom-scrollbar p-8 lg:p-12">
         <div className="max-w-6xl mx-auto">
           <AnimatePresence mode="wait">
-            {activeView === 'CORTEX' && (
-              <motion.section 
-                key="cortex"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="max-w-6xl mx-auto w-full"
-              >
-                 <div className="mb-16 border-b border-white/10 pb-8 flex justify-between items-end">
-                  <div className="space-y-2">
-                    <p className="header-label">{t.agents.calibration}</p>
-                    <h2 className="text-3xl font-black text-white uppercase tracking-tighter">{t.dashboard.title}</h2>
-                  </div>
-                </div>
-                <CortexDashboard t={t.cortex} />
-              </motion.section>
-            )}
-
             {activeView === 'DASHBOARD' && (
               <motion.section 
                 key="dashboard"
@@ -648,6 +628,12 @@ export default function App() {
                   panelState={auditPanelBridge}
                   onTrain={handleTrain}
                   onSyncDashboard={handleRetroactiveAudit}
+                />
+
+                <AuditCommandCenter
+                  lang={lang}
+                  results={filteredResults}
+                  onOpenCase={handleGenerateReport}
                 />
 
                 {/* Main Results Table-like View */}
@@ -739,37 +725,6 @@ export default function App() {
                        <p className="text-[12px] font-bold uppercase tracking-[0.2em] text-gray-400">{t.dashboard.empty}</p>
                        <p className="text-sm text-gray-300 mt-2">Realice una búsqueda o espere al ciclo automático</p>
                     </div>
-                  )}
-                </div>
-              </motion.section>
-            )}
-
-            {activeView === 'HISTORY' && (
-              <motion.section 
-                key="history"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="max-w-6xl mx-auto w-full"
-              >
-                 <div className="mb-16 border-b border-white/10 pb-8 space-y-2">
-                  <p className="header-label">Logs</p>
-                  <h2 className="text-3xl font-black text-white uppercase tracking-tighter">Archived Vector Frames</h2>
-                </div>
-                
-                <div className="grid gap-px bg-white/10 border border-white/10">
-                  {results.length > 0 ? (
-                    results.map((r, i) => (
-                      <div key={i} className="bg-[#09090b] p-6 flex justify-between items-center group cursor-pointer hover:bg-zinc-900/50">
-                        <div className="flex items-center gap-6">
-                           <p className="data-text text-[#3f3f46]">REF_{String(i).padStart(4, '0')}</p>
-                           <h4 className="text-sm font-bold text-zinc-300 uppercase tracking-tight">{r.providerName}</h4>
-                        </div>
-                        <ChevronRight className="text-zinc-800 group-hover:text-white" size={16} />
-                      </div>
-                    ))
-                  ) : (
-                    <div className="p-20 text-center uppercase font-mono text-[10px] text-[#3f3f46] tracking-widest">Archive storage depleted</div>
                   )}
                 </div>
               </motion.section>
@@ -1149,10 +1104,15 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      <SettingsModal 
+      <AdvancedSettingsModal 
         isOpen={showSettings} 
         onClose={() => setShowSettings(false)} 
+        t={t}
+        lang={lang}
+        results={results}
+        logs={agentLogs}
         currentConfig={config} 
+        onRetroactiveAudit={() => handleRetroactiveAudit()}
         onSave={(e: any) => {
           e.preventDefault();
           const formData = new FormData(e.currentTarget);
@@ -1165,6 +1125,176 @@ export default function App() {
           if (results.length > 0) handleSearch();
         }} 
       />
+    </div>
+  );
+}
+
+function getInvestigationAction(result: AnalysisResult, isEs: boolean) {
+  if (result.risk === 'Red') {
+    return isEs
+      ? 'Abrir expediente, congelar muestra probatoria y validar soportes SECOP/documentales.'
+      : 'Open a case file, freeze the evidence sample, and validate SECOP/document support.';
+  }
+
+  if (result.similarityScore >= 0.85) {
+    return isEs
+      ? 'Comparar objetos contractuales, anexos y estudios previos antes de cerrar el hallazgo.'
+      : 'Compare contract objects, attachments, and prior studies before closing the finding.';
+  }
+
+  if (result.contracts.length >= 3 && result.maxDayDiff <= 90) {
+    return isEs
+      ? 'Revisar posible fraccionamiento por ventana temporal y concentracion de proveedor.'
+      : 'Review possible contract splitting by time window and supplier concentration.';
+  }
+
+  return isEs
+    ? 'Mantener monitoreo y re-evaluar cuando entren nuevos registros SECOP.'
+    : 'Keep monitoring and re-score when new SECOP records arrive.';
+}
+
+function getLifecycleCoverage(result: AnalysisResult | null, isEs: boolean) {
+  const firstContract = result?.contracts?.[0];
+
+  return [
+    {
+      label: isEs ? 'Planeacion' : 'Planning',
+      complete: Boolean(firstContract?.objeto_del_contrato && firstContract?.valor_del_contrato),
+      detail: isEs ? 'Objeto y presupuesto detectados' : 'Object and budget detected',
+    },
+    {
+      label: isEs ? 'Licitacion' : 'Tender',
+      complete: Boolean(firstContract?.modalidad_de_contratacion),
+      detail: isEs ? 'Modalidad SECOP disponible' : 'SECOP modality available',
+    },
+    {
+      label: isEs ? 'Adjudicacion' : 'Award',
+      complete: Boolean(firstContract?.nombre_del_contratista || result?.providerName),
+      detail: isEs ? 'Proveedor identificado' : 'Supplier identified',
+    },
+    {
+      label: isEs ? 'Contrato' : 'Contract',
+      complete: Boolean(firstContract?.fecha_de_firma && firstContract?.estado_contrato),
+      detail: isEs ? 'Fecha y estado disponibles' : 'Date and status available',
+    },
+    {
+      label: isEs ? 'Ejecucion' : 'Implementation',
+      complete: false,
+      detail: isEs ? 'Pendiente evidencia fisica/documental' : 'Physical/document evidence pending',
+    },
+  ];
+}
+
+function AuditCommandCenter({
+  lang,
+  results,
+  onOpenCase,
+}: {
+  lang: Language;
+  results: AnalysisResult[];
+  onOpenCase: (result: AnalysisResult) => void;
+}) {
+  const isEs = lang === 'ES';
+  const queue = [...results].sort((a, b) => b.riskScore - a.riskScore).slice(0, 3);
+  const leadCase = queue[0] || null;
+  const lifecycle = getLifecycleCoverage(leadCase, isEs);
+  const lifecycleScore = Math.round((lifecycle.filter(item => item.complete).length / lifecycle.length) * 100);
+
+  return (
+    <div data-testid="audit-command-center" className="gov-card p-8 bg-white border-l-8 border-l-[#D12C26] space-y-8">
+      <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6">
+        <div className="space-y-3">
+          <p className="header-label !mb-0 flex items-center gap-2">
+            <ShieldAlert size={14} /> {isEs ? 'Mesa de decision' : 'Decision desk'}
+          </p>
+          <h3 className="text-3xl font-black text-[#333333] uppercase tracking-tighter">
+            {isEs ? 'Cola priorizada de auditoria' : 'Prioritized audit queue'}
+          </h3>
+          <p className="text-sm text-gray-500 font-medium max-w-3xl">
+            {isEs
+              ? 'La vista principal ahora se comporta como una sala de control: prioriza expedientes, muestra trazabilidad estilo OCDS y sugiere el siguiente paso verificable.'
+              : 'The main view now behaves like a control room: it prioritizes cases, shows OCDS-style traceability, and suggests the next verifiable step.'}
+          </p>
+        </div>
+        <div className="bg-[#f0f7ff] border border-[#004884]/10 p-5 min-w-48">
+          <p className="header-label !text-gray-400">{isEs ? 'Cobertura ciclo OCDS' : 'OCDS lifecycle coverage'}</p>
+          <p className="text-3xl font-black text-[#004884] tabular-nums">{leadCase ? `${lifecycleScore}%` : '--'}</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <div className="xl:col-span-2 space-y-3">
+          {queue.length > 0 ? queue.map((result, index) => (
+            <button
+              key={result.groupKey}
+              type="button"
+              onClick={() => onOpenCase(result)}
+              className="w-full text-left bg-gray-50 border border-[#E6E6E6] p-5 hover:border-[#004884] hover:bg-white transition-all group"
+            >
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-3">
+                    <span className={cn(
+                      "w-8 h-8 flex items-center justify-center text-[11px] font-black text-white",
+                      index === 0 ? "bg-[#D12C26]" : "bg-[#004884]"
+                    )}>
+                      {index + 1}
+                    </span>
+                    <h4 className="text-sm font-black text-[#333333] uppercase">{result.providerName}</h4>
+                  </div>
+                  <p className="text-[11px] text-gray-500 font-bold uppercase leading-relaxed">
+                    {getInvestigationAction(result, isEs)}
+                  </p>
+                </div>
+                <div className="flex items-center gap-6 shrink-0">
+                  <div className="text-right">
+                    <p className="header-label !text-gray-400">{isEs ? 'Riesgo' : 'Risk'}</p>
+                    <p className={cn("text-2xl font-black tabular-nums", result.risk === 'Red' ? "text-red-600" : "text-[#004884]")}>
+                      {result.riskScore.toFixed(0)}%
+                    </p>
+                  </div>
+                  <ArrowRight className="text-gray-300 group-hover:text-[#004884]" size={20} />
+                </div>
+              </div>
+            </button>
+          )) : (
+            <div className="bg-gray-50 border border-dashed border-gray-200 p-10 text-center">
+              <Target className="mx-auto text-gray-300 mb-4" size={36} />
+              <p className="text-[12px] font-black uppercase tracking-widest text-gray-400">
+                {isEs ? 'Sin casos priorizados todavia' : 'No prioritized cases yet'}
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="bg-white border border-[#E6E6E6] p-6 space-y-5">
+          <div className="flex items-center justify-between">
+            <p className="header-label !mb-0">{isEs ? 'Trazabilidad OCDS' : 'OCDS traceability'}</p>
+            <Files size={16} className="text-[#004884]" />
+          </div>
+          <div className="space-y-3">
+            {lifecycle.map(item => (
+              <div key={item.label} className="flex items-start gap-3">
+                <div className={cn(
+                  "w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5",
+                  item.complete ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-300"
+                )}>
+                  {item.complete ? <CheckCircle2 size={12} /> : <Info size={12} />}
+                </div>
+                <div>
+                  <p className="text-[11px] font-black text-[#333333] uppercase">{item.label}</p>
+                  <p className="text-[10px] text-gray-500 font-medium">{item.detail}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="bg-amber-50 border border-amber-100 p-4 text-[10px] text-amber-800 font-bold uppercase leading-relaxed">
+            {isEs
+              ? 'Brecha clave: evidencia de ejecucion. Para ser clase mundial, el siguiente salto es conectar fotos, interventoria, pagos y avance fisico.'
+              : 'Key gap: implementation evidence. To become best-in-class, the next leap is connecting photos, oversight, payments, and physical progress.'}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1333,6 +1463,7 @@ function NeuralCenter({
   );
 }
 
+/*
 function SettingsModal({ isOpen, onClose, currentConfig, onSave }: { isOpen: boolean, onClose: () => void, currentConfig: AnalysisConfig, onSave: (e: any) => void }) {
   return (
     <AnimatePresence>
@@ -1365,6 +1496,194 @@ function SettingsModal({ isOpen, onClose, currentConfig, onSave }: { isOpen: boo
                 <button type="submit" className="gov-button flex-1 text-[10px]">Guardar</button>
               </div>
             </form>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+  );
+}
+*/
+
+function AdvancedSettingsModal({
+  isOpen,
+  onClose,
+  t,
+  lang,
+  results,
+  logs,
+  currentConfig,
+  onRetroactiveAudit,
+  onSave,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  t: any;
+  lang: Language;
+  results: AnalysisResult[];
+  logs: any[];
+  currentConfig: AnalysisConfig;
+  onRetroactiveAudit: () => void;
+  onSave: (e: any) => void;
+}) {
+  const [activeTab, setActiveTab] = useState<'CALIBRATION' | 'INTELLIGENCE' | 'NETWORK' | 'HISTORY' | 'MANUAL'>('CALIBRATION');
+  const isEs = lang === 'ES';
+  const tabs = [
+    { id: 'CALIBRATION' as const, label: isEs ? 'Calibracion' : 'Calibration', icon: Settings, testId: 'advanced-tab-calibration' },
+    { id: 'INTELLIGENCE' as const, label: isEs ? 'Base IA' : 'Intel base', icon: BookOpen, testId: 'advanced-tab-intelligence' },
+    { id: 'NETWORK' as const, label: isEs ? 'Red y modelos' : 'Network', icon: Cpu, testId: 'advanced-tab-network' },
+    { id: 'HISTORY' as const, label: isEs ? 'Historial' : 'History', icon: History, testId: 'advanced-tab-history' },
+    { id: 'MANUAL' as const, label: isEs ? 'Manual' : 'Manual', icon: Landmark, testId: 'advanced-tab-manual' },
+  ];
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="absolute inset-0 bg-[#004884]/40 backdrop-blur-sm" />
+          <motion.div
+            data-testid="advanced-console"
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 20, opacity: 0 }}
+            className="relative w-full max-w-7xl h-[88vh] bg-white border-2 border-[#004884] shadow-2xl flex flex-col overflow-hidden"
+          >
+            <div className="p-6 border-b-2 border-[#F2F2F2] flex items-start justify-between bg-white">
+              <div className="space-y-2">
+                <p className="header-label !mb-0">{isEs ? 'Consola avanzada' : 'Advanced console'}</p>
+                <h3 className="text-3xl font-black text-[#004884] uppercase tracking-tighter leading-none">
+                  {isEs ? 'Configuracion, red e inteligencia' : 'Configuration, network and intelligence'}
+                </h3>
+                <p className="text-sm text-gray-500 font-medium max-w-3xl">
+                  {isEs
+                    ? 'Lo tecnico vive aqui para no contaminar el flujo principal de auditoria. El usuario opera desde el panel; el equipo experto calibra desde esta consola.'
+                    : 'Technical operations live here so they do not pollute the main audit flow. Users work from the panel; expert teams calibrate here.'}
+                </p>
+              </div>
+              <button data-testid="advanced-console-close" onClick={onClose} className="w-10 h-10 flex items-center justify-center text-gray-400 hover:bg-[#004884] hover:text-white transition-all">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="flex flex-1 min-h-0">
+              <aside className="w-72 border-r border-[#E6E6E6] bg-gray-50 p-4 space-y-2 shrink-0">
+                {tabs.map(tab => (
+                  <button
+                    key={tab.id}
+                    data-testid={tab.testId}
+                    type="button"
+                    onClick={() => setActiveTab(tab.id)}
+                    className={cn(
+                      "w-full px-4 py-4 text-left text-[11px] font-black uppercase tracking-widest flex items-center gap-3 border transition-all",
+                      activeTab === tab.id
+                        ? "bg-[#004884] text-white border-[#004884]"
+                        : "bg-white text-gray-500 border-[#E6E6E6] hover:text-[#004884] hover:border-[#004884]/30"
+                    )}
+                  >
+                    <tab.icon size={16} />
+                    {tab.label}
+                  </button>
+                ))}
+              </aside>
+
+              <div className="flex-1 min-w-0 overflow-y-auto custom-scrollbar p-8 bg-[#F8FAFC]">
+                {activeTab === 'CALIBRATION' && (
+                  <form onSubmit={onSave} className="max-w-2xl space-y-8 bg-white border border-[#E6E6E6] p-8">
+                    <div>
+                      <p className="header-label">{isEs ? 'Parametros de deteccion' : 'Detection parameters'}</p>
+                      <h4 className="text-2xl font-black text-[#333333] uppercase">
+                        {isEs ? 'Calibracion forense' : 'Forensic calibration'}
+                      </h4>
+                    </div>
+                    {[
+                      { label: isEs ? 'Umbral de Similitud (%)' : 'Similarity threshold (%)', name: 'sim', val: currentConfig.similarityThreshold * 100 },
+                      { label: isEs ? 'Ventana Temporal (Dias)' : 'Time window (days)', name: 'days', val: currentConfig.dayWindow },
+                      { label: isEs ? 'Umbral de Valor ($)' : 'Value threshold ($)', name: 'value', val: currentConfig.valueThreshold },
+                    ].map(f => (
+                      <div key={f.name} className="space-y-2">
+                        <label className="header-label">{f.label}</label>
+                        <input
+                          name={f.name}
+                          type="number"
+                          defaultValue={f.val}
+                          className="w-full bg-gray-50 border border-gray-200 px-4 py-3 text-sm font-bold text-[#333333] focus:border-[#004884] outline-none transition-all"
+                        />
+                      </div>
+                    ))}
+                    <div className="flex gap-4 pt-4">
+                      <button onClick={onClose} type="button" className="gov-button-outline flex-1">{isEs ? 'Cancelar' : 'Cancel'}</button>
+                      <button type="submit" className="gov-button flex-1 text-[10px]">{isEs ? 'Guardar' : 'Save'}</button>
+                    </div>
+                  </form>
+                )}
+
+                {activeTab === 'INTELLIGENCE' && (
+                  <div className="h-[70vh] border border-[#E6E6E6] bg-white overflow-hidden">
+                    <KnowledgeBase
+                      results={results}
+                      onRetroactiveAudit={onRetroactiveAudit}
+                      lang={lang}
+                    />
+                  </div>
+                )}
+
+                {activeTab === 'NETWORK' && (
+                  <div className="bg-[#09090b] p-6 min-h-[70vh]">
+                    <CortexDashboard t={t.cortex} />
+                  </div>
+                )}
+
+                {activeTab === 'HISTORY' && (
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+                    <div className="bg-white border border-[#E6E6E6] p-6 space-y-4">
+                      <p className="header-label">{isEs ? 'Bitacora tecnica' : 'Technical log'}</p>
+                      <div className="h-[55vh] overflow-y-auto custom-scrollbar font-mono text-[10px] text-gray-500 space-y-2">
+                        {logs.length > 0 ? logs.map((log, i) => (
+                          <p key={`${log.timestamp}-${i}`} className={cn(log.status === 'COMPLETED' ? "text-emerald-600" : "text-gray-700")}>
+                            [{new Date(log.timestamp).toLocaleTimeString()}] [{log.agent}] {log.message}
+                          </p>
+                        )) : (
+                          <p className="opacity-40 uppercase">{isEs ? 'Sin actividad tecnica en esta sesion' : 'No technical activity in this session'}</p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="bg-white border border-[#E6E6E6] p-6 space-y-4">
+                      <p className="header-label">{isEs ? 'Simulacion multiagente' : 'Multi-agent simulation'}</p>
+                      <AgentOffice logs={logs} />
+                    </div>
+                  </div>
+                )}
+
+                {activeTab === 'MANUAL' && (
+                  <div className="max-w-4xl bg-white border border-[#E6E6E6] p-10 space-y-10">
+                    <div>
+                      <p className="header-label">{isEs ? 'Manual operativo' : 'Operating manual'}</p>
+                      <h4 className="text-3xl font-black text-[#004884] uppercase tracking-tighter">{t.about.title}</h4>
+                    </div>
+                    <div className="grid gap-6">
+                      {[
+                        { icon: Search, title: t.about.step_1, text: t.about.step_1_text },
+                        { icon: Scale, title: t.about.step_2, text: t.about.step_2_text },
+                        { icon: ShieldAlert, title: t.about.step_3, text: t.about.step_3_text },
+                      ].map(item => (
+                        <div key={item.title} className="border border-[#E6E6E6] p-6 flex gap-5">
+                          <div className="w-12 h-12 bg-[#004884] text-white flex items-center justify-center shrink-0">
+                            <item.icon size={22} />
+                          </div>
+                          <div>
+                            <h5 className="text-sm font-black text-[#333333] uppercase">{item.title}</h5>
+                            <p className="text-sm text-gray-500 leading-relaxed mt-2">{item.text}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="bg-[#004884] text-white p-8">
+                      <p className="header-label !text-[#FCD059]">{t.about.juror_note}</p>
+                      <p className="text-base font-medium leading-relaxed">{t.about.juror_text}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
           </motion.div>
         </div>
       )}

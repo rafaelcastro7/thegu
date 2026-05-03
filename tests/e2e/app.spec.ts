@@ -77,6 +77,13 @@ test("loads a persisted finding and generates a forensic report", async ({ page 
   await expect(page.getByTestId("analytics-memory-matches")).toContainText("1");
   await expect(page.getByTestId("analytics-current-focus")).toContainText("92%");
   await expect(page.getByTestId("analytics-bridge")).toContainText("PROVEEDOR PRUEBA SAS");
+  await expect(page.getByTestId("audit-command-center")).toBeVisible();
+  await expect(page.getByTestId("audit-command-center")).toContainText("PROVEEDOR PRUEBA SAS");
+  await expect(page.getByTestId("advanced-console-button")).toBeVisible();
+  await page.getByTestId("advanced-console-button").click();
+  await expect(page.getByTestId("advanced-console")).toBeVisible();
+  await expect(page.getByTestId("advanced-tab-network")).toBeVisible();
+  await page.getByTestId("advanced-console-close").click();
 
   await expect(page.getByTestId("result-card").first()).toBeVisible({ timeout: 180000 });
   await page.getByTestId("result-card").first().click();
