@@ -7,7 +7,7 @@ Sistema de analítica forense para detectar posibles patrones de fraccionamiento
 - Frontend: React + Tailwind CSS + Framer Motion
 - Backend: Express + Vite middleware
 - Base de datos: PostgreSQL para caché de análisis, reportes y contexto RAG
-- Modelos locales: Ollama (`qwen3:4b` y `nomic-embed-text`)
+- Modelos locales: Ollama (`tinyllama` para respuesta rápida, `gemma4-fast`/`qwen3:4b` como respaldo y `nomic-embed-text`)
 - Fuente de datos: datos.gov.co / SECOP II
 - Validación: TypeScript + Playwright e2e
 
@@ -34,6 +34,8 @@ npm install
 3. Asegura que PostgreSQL y Ollama estén disponibles. Ollama debe tener cargados:
 
 ```bash
+ollama pull tinyllama
+ollama pull gemma4-fast
 ollama pull qwen3:4b
 ollama pull nomic-embed-text
 ```

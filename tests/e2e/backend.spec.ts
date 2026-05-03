@@ -66,3 +66,21 @@ test("persistent legal RAG returns ranked context", async ({ request }) => {
   expect(payload.context).toContain("Relevancia Forense");
   expect(payload.context.toLowerCase()).toContain("fraccionamiento");
 });
+
+test("local generation endpoint can produce non-empty text with fallback model", async ({ request }) => {
+  const response = await request.post("/api/ollama/generate", {
+    data: {
+      model: "tinyllama:latest",
+      prompt: "Responde con una sola palabra: OK",
+      stream: false,
+      options: {
+        num_predict: 40,
+        temperature: 0,
+      },
+    },
+  });
+
+  expect(response.ok()).toBeTruthy();
+  const payload = await response.json();
+  expect(payload.response.trim().length).toBeGreaterThan(0);
+});

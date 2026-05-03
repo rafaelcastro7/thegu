@@ -1,6 +1,6 @@
 import type { AnalysisResult, DetailedFinding } from "./analysis";
 
-const GENERATE_MODEL = "qwen3:4b";
+const GENERATE_MODELS = ["tinyllama:latest", "gemma4-fast:latest", "qwen3:4b"];
 const EMBED_MODEL = "nomic-embed-text";
 const NO_THINK_PREFIX = "/no_think\n";
 
@@ -45,19 +45,34 @@ async function callLocalModel<T>(endpoint: string, payload: unknown): Promise<T>
 }
 
 async function generateText(prompt: string, numPredict = 400): Promise<string> {
-  const response = await withRetry(() =>
-    callLocalModel<OllamaGenerateResponse>("generate", {
-      model: GENERATE_MODEL,
-      prompt: `${NO_THINK_PREFIX}${prompt}`,
-      stream: false,
-      options: {
-        num_predict: numPredict,
-        temperature: 0.2,
-      },
-    })
-  );
+  let lastError: unknown = null;
 
-  return response.response || "";
+  for (const model of GENERATE_MODELS) {
+    try {
+      const response = await withRetry(() =>
+        callLocalModel<OllamaGenerateResponse>("generate", {
+          model,
+          prompt: `${NO_THINK_PREFIX}${prompt}`,
+          stream: false,
+          options: {
+            num_predict: numPredict,
+            temperature: 0.2,
+          },
+        })
+      );
+
+      const text = response.response?.trim() || "";
+      if (text) return text;
+
+      console.warn(`[BHA] Local model ${model} returned an empty response. Trying next model.`);
+    } catch (error) {
+      lastError = error;
+      console.warn(`[BHA] Local model ${model} failed. Trying next model.`, error);
+    }
+  }
+
+  if (lastError) throw lastError;
+  return "";
 }
 
 export async function getEmbedding(text: string): Promise<number[]> {
@@ -111,12 +126,59 @@ export async function generateForensicReport(results: AnalysisResult[] | Analysi
   `;
 
   try {
-    const response = await generateText(prompt, 700);
-    return response || (isEs ? "Error en generación." : "Generation error.");
+    const response = await generateText(prompt, 240);
+    return response || buildDeterministicForensicReport(resultsArray, lang);
   } catch (error) {
     console.error("Report Generation Error:", error);
-    return isEs ? "Error al generar el informe con modelos locales." : "Error generating report with local models.";
+    return buildDeterministicForensicReport(resultsArray, lang);
   }
+}
+
+function buildDeterministicForensicReport(results: AnalysisResult[], lang: "ES" | "EN") {
+  const isEs = lang === "ES";
+  const totalExposure = results.reduce((sum, result) => sum + result.totalValue, 0);
+  const highRisk = results.filter((result) => result.risk === "Red");
+  const flags = Array.from(new Set(results.flatMap((result) => result.redFlags))).slice(0, 8);
+
+  if (!isEs) {
+    return `
+# Forensic Audit Report
+
+## Executive Summary
+The local audit engine analyzed ${results.length} procurement cluster(s), with an estimated fiscal exposure of **$${totalExposure.toLocaleString()}**. ${highRisk.length} cluster(s) were classified as high risk.
+
+## Risk Matrix
+${results.map((result) => `- **${result.providerName}**: ${result.risk} risk, ${result.riskScore.toFixed(1)}/100, ${(result.similarityScore * 100).toFixed(1)}% semantic similarity.`).join("\n")}
+
+## Technical Evidence
+${flags.map((flag) => `- ${flag}`).join("\n") || "- No active red flags were detected."}
+
+## Legal Basis
+Potential split-contracting indicators should be reviewed against Colombian procurement planning, transparency and competition principles.
+
+## Recommendations
+Prioritize human review of high-risk clusters, compare budget certificates and prior studies, and verify whether similar objects should have been consolidated into a single competitive process.
+    `.trim();
+  }
+
+  return `
+# Informe de Auditoría Forense
+
+## Resumen Ejecutivo
+El motor local analizó ${results.length} clúster(es) de contratación, con una exposición fiscal estimada de **$${totalExposure.toLocaleString()}**. ${highRisk.length} clúster(es) fueron clasificados como alto riesgo.
+
+## Matriz de Riesgo
+${results.map((result) => `- **${result.providerName}**: riesgo ${result.risk}, ${result.riskScore.toFixed(1)}/100, similitud semántica ${(result.similarityScore * 100).toFixed(1)}%.`).join("\n")}
+
+## Evidencia Técnica
+${flags.map((flag) => `- ${flag}`).join("\n") || "- No se detectaron banderas rojas activas."}
+
+## Fundamento Jurídico
+Los indicios de posible fraccionamiento deben revisarse frente a los principios de planeación, transparencia, selección objetiva y competencia de la contratación pública colombiana.
+
+## Recomendaciones
+Priorizar revisión humana de los clústeres de alto riesgo, contrastar certificados presupuestales y estudios previos, y verificar si los objetos contractuales similares debieron consolidarse en un único proceso competitivo.
+  `.trim();
 }
 
 export async function generateQuickObservation(summary: string, lang: "ES" | "EN"): Promise<string> {

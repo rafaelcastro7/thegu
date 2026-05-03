@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 test("loads a persisted finding and generates a forensic report", async ({ page }) => {
+  const groupKey = `REF:E2E-${Date.now()}`;
   const contract = {
     id_contrato: "CT-001",
     nombre_entidad: "SENA REGIONAL SANTANDER",
@@ -16,10 +17,10 @@ test("loads a persisted finding and generates a forensic report", async ({ page 
     fecha_de_firma: "2026-04-15T00:00:00.000Z",
   };
 
-  await page.addInitScript((payload) => {
+  await page.addInitScript(({ payload, key }) => {
     localStorage.setItem("GOB_IA_CACHE_V1", JSON.stringify({
       results: [{
-        groupKey: "REF:900123456",
+        groupKey: key,
         providerName: "PROVEEDOR PRUEBA SAS",
         contracts: [payload],
         totalValue: 120000000,
@@ -43,7 +44,7 @@ test("loads a persisted finding and generates a forensic report", async ({ page 
       health: 98.42,
       timestamp: Date.now(),
     }));
-  }, contract);
+  }, { payload: contract, key: groupKey });
 
   await page.goto("/");
   await expect(page).toHaveTitle(/BHA/i);

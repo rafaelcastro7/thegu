@@ -49,7 +49,12 @@ Abre una terminal y ejecuta:
 # En Windows/Mac, asegúrate de que la aplicación Ollama esté abierta.
 # En Linux: sudo systemctl start ollama
 
-# Descargar el modelo Worker/Generativo (Qwen3-4B)
+# Descargar el modelo Worker/Generativo principal
+ollama pull tinyllama
+
+# Descargar modelos generativos de respaldo
+ollama pull gemma4-fast
+
 ollama pull qwen3:4b
 
 # Descargar el modelo de Embeddings RAG
