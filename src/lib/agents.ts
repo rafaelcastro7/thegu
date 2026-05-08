@@ -127,7 +127,8 @@ export async function runCollaborativeAudit(
       : `Retrieving legal context for ${result.redFlags.length} alert(s).`,
     'EXECUTING'
   );
-  const legalContext = await getLegalContext(result.contracts[0].objeto_del_contrato, result.redFlags);
+  const queryObject = result.contracts[0]?.objeto_del_contrato || result.redFlags.join('. ') || 'contratación pública';
+  const legalContext = await getLegalContext(queryObject, result.redFlags);
   addLog(
     'LEGAL',
     isEs ? 'Contexto normativo priorizado para el expediente.' : 'Legal context ranked for the case file.',

@@ -46,7 +46,8 @@ function mapSecopRecord(record: Record<string, unknown>): Contract {
   const processId = value("id_del_proceso") || "N/A";
   const awardId = value("id_adjudicacion");
   const reference = value("referencia_del_proceso");
-  const publishedAt = value("fecha_de_publicacion_del") || value("fecha_de_publicacion") || "NO_DATE";
+  const rawDate = value("fecha_de_publicacion_del") || value("fecha_de_publicacion");
+  const publishedAt = rawDate && !Number.isNaN(new Date(rawDate).getTime()) ? rawDate : new Date().toISOString();
   const amount = value("precio_base") || "0";
   const sourceUrl = value("urlproceso");
   const uniqueContractId =
@@ -70,7 +71,7 @@ function mapSecopRecord(record: Record<string, unknown>): Contract {
         : value("entidad") || "PROVEEDOR_NO_IDENTIFICADO",
     documento_proveedor: value("nit_del_proveedor_adjudicado") || value("nit_entidad") || "0",
     valor_del_contrato: value("precio_base") || "0",
-    fecha_de_firma: publishedAt || new Date().toISOString(),
+    fecha_de_firma: publishedAt,
     objeto_del_contrato: value("descripci_n_del_procedimiento") || value("nombre_del_procedimiento") || "Sin descripción",
     modalidad_de_contratacion: value("modalidad_de_contratacion") || "No definida",
     estado_contrato: value("estado_resumen") || value("estado_del_procedimiento") || "Activo",

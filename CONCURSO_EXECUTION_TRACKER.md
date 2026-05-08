@@ -45,6 +45,7 @@ Consolidar en un solo lugar todos los cambios pedidos para GobIA Auditor, con es
 - `DONE` Integracion inicial de Phaser.js en frontend.
 - `DONE` Nuevo `src/components/AgentOffice.tsx` con escena 2D de oficina responsiva.
 - `DONE` Sincronizacion visual basada en eventos de estado derivados de `logs`.
+- `DONE` Rediseño de la vista de actividad a una consola secuencial con resumen, flujo reciente, mapa operativo y detalle por modulos.
 
 ## En curso
 
@@ -55,7 +56,7 @@ Consolidar en un solo lugar todos los cambios pedidos para GobIA Auditor, con es
 ### Fuente SECOP interna
 - `DONE` Se agrego endpoint interno para recuperar y mostrar contenido SECOP desde backend.
 - `DONE` Existe modal interno de visualizacion de fuente con metadata del contrato, resumen y texto recuperado.
-- `PARTIAL` Aun queda revisar otros puntos de la UX para garantizar que ninguna accion secundaria saque al usuario del sistema.
+- `DONE` El flujo visible principal ya mantiene al usuario dentro del sistema para revisar fuente SECOP y evidencia contractual.
 
 ### Auditoria interactiva
 - `DONE` Preguntas sugeridas iniciales y capa adaptativa en funcion del historial.
@@ -66,6 +67,7 @@ Consolidar en un solo lugar todos los cambios pedidos para GobIA Auditor, con es
 ### Reporte de hallazgos
 - `DONE` El acceso principal desde hallazgos ya no descarga directamente; abre una experiencia interna de reporte.
 - `DONE` Se agrego una ventana emergente de panorama ejecutivo con descarga PDF secundaria.
+- `DONE` El expediente ahora abre con un resumen inmediato y luego se refina en segundo plano para evitar esperas ciegas.
 - `PARTIAL` El PDF ya sale desde una vista membreteada, pero aun puede mejorar en narrativa y secciones pedagogicas.
 
 ### Datos reales, cache y vectorizacion
@@ -91,13 +93,13 @@ Consolidar en un solo lugar todos los cambios pedidos para GobIA Auditor, con es
 - `TODO` Convertir configuracion avanzada en consola profesional, completa y parametrizable.
 
 ### Contratos y fuentes
-- `TODO` Permitir abrir los contratos y fuentes sin salir del sistema en todos los puntos de la UX.
-- `TODO` Hacer explicito cuando dos contratos son distintos con identificadores confiables.
+- `PARTIAL` Permitir abrir los contratos y fuentes sin salir del sistema en todos los puntos de la UX.
+- `DONE` Ya se muestran identificadores verificables de proceso/adjudicacion para distinguir contratos dentro del dossier y del desglose tecnico.
 
 ### Limpieza UX general
 - `TODO` Revisar y eliminar mensajes dirigidos a desarrolladores.
 - `TODO` Hacer un roast completo del sistema y cerrar inconsistencias de interfaz.
-- `TODO` Redisenar la UX general con mejor jerarquia, tabs/subtabs y coherencia visual.
+- `PARTIAL` Redisenar la UX general con mejor jerarquia, tabs/subtabs y coherencia visual.
 
 ### Infraestructura de rendimiento
 - `TODO` Completar modo concurso del PC:
@@ -121,6 +123,7 @@ Consolidar en un solo lugar todos los cambios pedidos para GobIA Auditor, con es
 - `DONE` `npm run build` vuelve a pasar.
 - `DONE` Caso E2E critico de carga de hallazgo persistido y reporte forense vuelve a pasar.
 - `DONE` Suite `npm run test:e2e` completa vuelve a pasar.
+- `DONE` Se agregaron limites operativos y fallback rapido en el flujo de reporte y consulta legal para evitar bloqueos de UX.
 
 ## Archivos clave tocados hasta ahora
 - `src/App.tsx`

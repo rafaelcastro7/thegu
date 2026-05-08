@@ -391,7 +391,7 @@ function buildAdaptiveFallbackQA(
   const isEs = lang === "ES";
   const lastUser = [...history].reverse().find((item) => item.role === "user")?.content || "";
   const lastAnswer = [...history].reverse().find((item) => item.role === "ai")?.content || "";
-  const primaryReason = finding.reasons[0] || (isEs ? "Indicio tecnico relevante" : "Relevant technical clue");
+  const primaryReason = finding.reasons[0] || (isEs ? "Indicio técnico relevante" : "Relevant technical clue");
   const contractDate = new Date(finding.contract.fecha_de_firma).toLocaleDateString(isEs ? "es-CO" : "en-CA");
   const baseId = finding.contractId;
 
@@ -418,20 +418,20 @@ function buildAdaptiveFallbackQA(
 
   return [
     {
-      question: "Que queda por verificar despues de la ultima respuesta?",
-      answer: `El siguiente punto es validar el soporte documental de "${primaryReason}" para el contrato ${baseId}. Contrastalo con la ultima respuesta y confirma si SECOP muestra estudios previos, respaldo presupuestal y justificacion competitiva.`,
+      question: "¿Qué queda por verificar después de la última respuesta?",
+      answer: `El siguiente punto es validar el soporte documental de "${primaryReason}" para el contrato ${baseId}. Contrástalo con la última respuesta y confirma si SECOP muestra estudios previos, respaldo presupuestal y justificación competitiva.`,
     },
     {
-      question: "Que contratos comparables conviene revisar ahora?",
-      answer: `Revisa los contratos mas cercanos del mismo cluster de ${result.providerName}, especialmente los firmados alrededor de ${contractDate} con lenguaje de objeto similar y cuantias dentro de la misma banda.`,
+      question: "¿Qué contratos comparables conviene revisar ahora?",
+      answer: `Revisa los contratos más cercanos del mismo clúster de ${result.providerName}, especialmente los firmados alrededor de ${contractDate} con lenguaje de objeto similar y cuantías dentro de la misma banda.`,
     },
     {
-      question: "Cual es el frente juridico o procedimental que sigue abierto?",
-      answer: `${getLikelyLegalFrame(result, finding, lang)} El frente que sigue abierto despues del intercambio previo es: ${lastUser || "la justificacion competitiva del proceso"}.`,
+      question: "¿Cuál es el frente jurídico o procedimental que sigue abierto?",
+      answer: `${getLikelyLegalFrame(result, finding, lang)} El frente que sigue abierto después del intercambio previo es: ${lastUser || "la justificación competitiva del proceso"}.`,
     },
     {
-      question: "Cual deberia ser la siguiente pregunta mas util?",
-      answer: `Pide la evidencia SECOP exacta que confirme o debilite la respuesta anterior: ${lastAnswer.slice(0, 180) || "Aun no existe una respuesta previa registrada."}`,
+      question: "¿Cuál debería ser la siguiente pregunta más útil?",
+      answer: `Pide la evidencia SECOP exacta que confirme o debilite la respuesta anterior: ${lastAnswer.slice(0, 180) || "Aún no existe una respuesta previa registrada."}`,
     },
   ];
 }

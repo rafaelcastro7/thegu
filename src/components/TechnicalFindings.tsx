@@ -76,10 +76,10 @@ export function TechnicalFindings({ result, lang, onAskAuditor, onOpenSource, ex
 
           <div className="grid grid-cols-2 gap-3 relative z-10">
              {[
-               { id: 'L1', title: 'Ley 80/93', active: result.redFlags.some(f => f.includes('directa')) },
-               { id: 'L2', title: 'Ley 1474/11', active: result.riskScore > 60 },
-               { id: 'L3', title: 'Circular 17', active: result.similarityScore > 0.8 },
-               { id: 'L4', title: 'Sent. C-300', active: result.maxDayDiff < 5 }
+               { id: 'L1', title: 'Ley 80/93', active: result.redFlags.some(f => /directa|fraccionamiento|fragmenta/i.test(f)) },
+               { id: 'L2', title: 'Ley 1474/11', active: result.riskScore > 60 || result.redFlags.some(f => /colusi|favorecim|bunching/i.test(f)) },
+               { id: 'L3', title: 'Circular 17', active: result.similarityScore > 0.75 || result.redFlags.some(f => /similitud|identidad|sem.ntic/i.test(f)) },
+               { id: 'L4', title: 'Sent. C-300', active: result.contracts.length >= 3 && result.maxDayDiff < 30 && result.redFlags.some(f => /temporal|sincroni|ventana|fecha/i.test(f)) }
              ].map(law => (
                <div key={law.id} className={cn(
                  "p-3 border text-center transition-all",
@@ -104,7 +104,9 @@ export function TechnicalFindings({ result, lang, onAskAuditor, onOpenSource, ex
                 {isEs ? 'DESGLOSE DE EXPEDIENTES TÉCNICOS' : 'TECHNICAL CASE BREAKDOWN'}
               </h4>
            </div>
-           <p className="text-[10px] font-mono text-gray-400">N={result.contracts.length} NODES</p>
+           <p className="text-[10px] font-mono text-gray-400">
+             N={result.contracts.length} {isEs ? 'CONTRATOS OBSERVADOS' : 'OBSERVED CONTRACTS'}
+           </p>
         </div>
 
         <div className="grid gap-4">
@@ -131,6 +133,11 @@ export function TechnicalFindings({ result, lang, onAskAuditor, onOpenSource, ex
                       <span className="text-[10px] font-black bg-gray-100 px-3 py-1 text-gray-600 tabular-nums">
                         #{finding.contractId}
                       </span>
+                      {contractData.referencia_proceso && (
+                        <span className="text-[9px] font-bold text-[#004884] bg-[#f0f7ff] border border-[#d9eaf9] px-2 py-0.5 uppercase">
+                          {isEs ? 'Proceso' : 'Process'}: {contractData.referencia_proceso}
+                        </span>
+                      )}
                       <div className="flex flex-wrap gap-2">
                         {finding.reasons.map((reason, ridx) => (
                           <span key={ridx} className="text-[9px] font-bold text-orange-600 bg-orange-50 border border-orange-100 px-2 py-0.5 uppercase flex items-center gap-1">
@@ -183,6 +190,21 @@ export function TechnicalFindings({ result, lang, onAskAuditor, onOpenSource, ex
                         <DetailItem label={isEs ? "Estado" : "Status"} value={contractData.estado_contrato} />
                         <DetailItem label={isEs ? "Modalidad" : "Modality"} value={contractData.modalidad_de_contratacion} />
                         <DetailItem label={isEs ? "Fecha" : "Date"} value={new Date(contractData.fecha_de_firma).toLocaleDateString()} />
+                        <DetailItem label={isEs ? "Proceso" : "Process"} value={contractData.referencia_proceso || finding.contractId} />
+                        <DetailItem label={isEs ? "Adjudicacion" : "Award"} value={contractData.id_adjudicacion || 'N/A'} />
+                      </div>
+                      <div className="border border-[#E6E6E6] bg-white p-4 space-y-2">
+                        <p className="text-[9px] font-black uppercase tracking-[0.2em] text-gray-400">
+                          {isEs ? 'Identificador verificable' : 'Verifiable identifier'}
+                        </p>
+                        <p className="text-[11px] font-black text-[#333333] break-all">
+                          {contractData.id_adjudicacion || contractData.referencia_proceso || finding.contractId}
+                        </p>
+                        <p className="text-[10px] text-gray-500 leading-relaxed">
+                          {isEs
+                            ? 'Este dato permite diferenciar este contrato frente a otros del mismo proveedor o de la misma entidad.'
+                            : 'This value helps differentiate this contract from others linked to the same supplier or entity.'}
+                        </p>
                       </div>
                     </div>
                     <div className="space-y-4">
@@ -194,7 +216,7 @@ export function TechnicalFindings({ result, lang, onAskAuditor, onOpenSource, ex
                         onClick={() => onOpenSource(contractData)}
                         className="w-full py-2 bg-gray-200 text-gray-600 text-[9px] font-black uppercase tracking-widest hover:bg-gray-300 transition-all flex items-center justify-center gap-2"
                       >
-                        <ExternalLink size={12} /> {isEs ? 'ABRIR FUENTE SECOP' : 'OPEN SECOP SOURCE'}
+                        <ExternalLink size={12} /> {isEs ? 'VER SOPORTE SECOP EN EL SISTEMA' : 'OPEN SECOP SUPPORT IN SYSTEM'}
                       </button>
                     </div>
                   </motion.div>

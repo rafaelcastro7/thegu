@@ -64,8 +64,7 @@ export const INITIAL_RULES: IntelligenceRule[] = [
     source: 'Circular 17 CCE',
     riskWeight: 35,
     check: (list) => {
-       const dates = list.map(c => new Date(c.fecha_de_firma).getTime());
-       const uniqueDates = new Set(list.map(c => c.fecha_de_firma.split('T')[0])).size;
+       const uniqueDates = new Set(list.map(c => (c.fecha_de_firma || '').split('T')[0]).filter(Boolean)).size;
        const spread = list.length - uniqueDates;
        return {
          triggered: spread >= 2,

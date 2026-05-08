@@ -167,6 +167,50 @@ function buildSourceEvidenceRows(contract: Contract, lang: Language) {
   ];
 }
 
+function buildInstantAuditSummary(result: AnalysisResult, lang: Language) {
+  const isEs = lang === 'ES';
+  const leadFlag = result.redFlags[0];
+  const entityList = summarizeList(uniqueEntityNames(result.contracts), 3) || (isEs ? 'Sin entidad visible' : 'No visible entity');
+
+  if (!isEs) {
+    return [
+      '# Immediate Audit Summary',
+      '',
+      '## Executive Snapshot',
+      `The case for **${result.providerName}** was prioritized with a risk score of **${result.riskScore.toFixed(1)}/100** after reviewing **${result.contracts.length}** contract(s) worth **${formatCompactCop(result.totalValue)}**.`,
+      '',
+      '## Why it was prioritized',
+      `- Lead signal: ${leadFlag || 'Aggregated contract pattern under review.'}`,
+      `- Semantic similarity: ${(result.similarityScore * 100).toFixed(1)}%.`,
+      `- Observed time window: ${result.maxDayDiff} day(s).`,
+      '',
+      '## Coverage',
+      `Reviewed entities: ${entityList}.`,
+      '',
+      '## Next action',
+      'Open the evidence dossier, validate the process reference, and contrast the flagged contracts against their SECOP source before escalating.',
+    ].join('\n');
+  }
+
+  return [
+    '# Resumen Inmediato de Auditoría',
+    '',
+    '## Lectura ejecutiva',
+    `El expediente de **${result.providerName}** fue priorizado con un puntaje de riesgo de **${result.riskScore.toFixed(1)}/100** tras revisar **${result.contracts.length}** contrato(s) por **${formatCompactCop(result.totalValue)}**.`,
+    '',
+    '## Por qué quedó priorizado',
+    `- Señal líder: ${leadFlag || 'Patrón agregado del grupo contractual en revisión.'}`,
+    `- Similitud semántica observada: ${(result.similarityScore * 100).toFixed(1)}%.`,
+    `- Ventana temporal observada: ${result.maxDayDiff} día(s).`,
+    '',
+    '## Cobertura',
+    `Entidades observadas: ${entityList}.`,
+    '',
+    '## Siguiente paso',
+    'Abra el dossier probatorio, valide la referencia del proceso y contraste los contratos señalados con su fuente SECOP antes de escalar el caso.',
+  ].join('\n');
+}
+
 export default function App() {
   const [lang, setLang] = useState<Language>('ES');
   const t = translations[lang];
@@ -524,29 +568,31 @@ export default function App() {
 
   async function handleGenerateReport(result: AnalysisResult) {
     setSelectedResult(result);
-    setReportLoading(true);
-    setAiReport(null);
+    setReportLoading(false);
+    setAiReport(buildInstantAuditSummary(result, lang));
     setAgentLogs([]);
-    
-    try {
-      const { report, logs, memory } = await runCollaborativeAudit(result, lang, (updatedLogs, updatedMemory) => {
-        setAgentLogs(updatedLogs);
-        setNeuralMemory(updatedMemory);
-      });
-      setAiReport(report);
-      setAgentLogs(logs);
-      setNeuralMemory(memory);
-      void primeAuditExperience({
-        result,
-        lang,
-        onLog: (entry) => setAgentLogs((prev) => [...prev, entry].slice(-60)),
-      });
-    } catch (error) {
-      console.error(error);
-      setAiReport(lang === 'ES' ? "Error en Síntesis de Auditoría. Verifique que Ollama esté en ejecución." : "Audit Synthesis Failure. Please check if Ollama is running.");
-    } finally {
-      setReportLoading(false);
-    }
+    setStatusMessage(lang === 'ES' ? 'Abriendo expediente y refinando síntesis...' : 'Opening the case and refining the report...');
+
+    void (async () => {
+      try {
+        const { report, logs, memory } = await runCollaborativeAudit(result, lang, (updatedLogs, updatedMemory) => {
+          setAgentLogs(updatedLogs);
+          setNeuralMemory(updatedMemory);
+        });
+        setAiReport(report);
+        setAgentLogs(logs);
+        setNeuralMemory(memory);
+        void primeAuditExperience({
+          result,
+          lang,
+          onLog: (entry) => setAgentLogs((prev) => [...prev, entry].slice(-60)),
+        });
+        setStatusMessage(lang === 'ES' ? 'Expediente actualizado con síntesis profunda' : 'Case file updated with deep synthesis');
+      } catch (error) {
+        console.error(error);
+        setStatusMessage(lang === 'ES' ? 'Se mantiene el resumen inmediato por contingencia del motor local' : 'The immediate summary is being kept while the local engine recovers');
+      }
+    })();
   }
 
   async function openInteractiveAudit(finding: any) {
@@ -1563,7 +1609,7 @@ export default function App() {
                    {reportLoading ? (
                     <div className="py-24 flex flex-col items-center justify-center border-2 border-dashed border-gray-100 rounded-lg bg-gray-50/30 overflow-hidden relative">
                        <div className="absolute inset-0 opacity-10">
-                          <AgentOffice logs={agentLogs} />
+                          <AgentOffice logs={agentLogs} lang={lang} />
                        </div>
                        <Loader2 className="animate-spin text-[#004884] mb-6 relative z-10" size={48} />
                        <p className="text-[12px] font-bold uppercase tracking-[0.4em] text-[#004884] animate-pulse relative z-10">
@@ -1859,6 +1905,7 @@ export default function App() {
                               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                                 {[
                                   { label: lang === 'ES' ? 'Contrato' : 'Contract', value: current.contractId },
+                                  { label: lang === 'ES' ? 'Proceso' : 'Process', value: contract.referencia_proceso || 'N/A' },
                                   { label: lang === 'ES' ? 'Modalidad' : 'Modality', value: contract.modalidad_de_contratacion },
                                   { label: lang === 'ES' ? 'Fecha' : 'Date', value: new Date(contract.fecha_de_firma).toLocaleDateString(lang === 'ES' ? 'es-CO' : 'en-CA') },
                                   { label: lang === 'ES' ? 'Valor' : 'Amount', value: `$${parseContractValue(contract.valor_del_contrato).toLocaleString(lang === 'ES' ? 'es-CO' : 'en-US')}` },
@@ -1887,6 +1934,16 @@ export default function App() {
                                   <p className="header-label">{lang === 'ES' ? 'Soporte puntual del hallazgo' : 'Pinpoint evidence'}</p>
                                   <div className="bg-gray-50 border border-gray-100 p-4 text-sm text-gray-600 leading-relaxed">
                                     {current.evidence}
+                                  </div>
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-gray-600">
+                                    <div className="bg-gray-50 border border-gray-100 p-3">
+                                      <span className="font-black text-[#004884]">{lang === 'ES' ? 'Referencia de proceso' : 'Process reference'}:</span>{' '}
+                                      {contract.referencia_proceso || current.contractId}
+                                    </div>
+                                    <div className="bg-gray-50 border border-gray-100 p-3">
+                                      <span className="font-black text-[#004884]">{lang === 'ES' ? 'ID de adjudicacion' : 'Award ID'}:</span>{' '}
+                                      {contract.id_adjudicacion || 'N/A'}
+                                    </div>
                                   </div>
                                   <div className="space-y-2 text-sm text-gray-600">
                                     <p><span className="font-black text-[#004884]">{lang === 'ES' ? 'Proveedor' : 'Provider'}:</span> {selectedResult.providerName}</p>
@@ -2609,25 +2666,10 @@ function NeuralCenter({
         </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-        <div className="space-y-6">
-          <h4 className="header-label">{t.logic_feed}</h4>
-          <div className="bg-white border border-[#E6E6E6] p-6 h-[400px] overflow-y-auto custom-scrollbar font-mono text-[10px] text-gray-500 space-y-2 shadow-inner">
-            {logs.length > 0 ? logs.map((log, i) => (
-              <p key={i} className={cn(log.status === 'COMPLETED' ? "text-emerald-600" : "text-gray-700")}>
-                [{new Date(log.timestamp).toLocaleTimeString()}] [{log.agent}] {log.message}
-              </p>
-            )) : (
-              <p className="opacity-30">{isEs ? 'Sin actividad registrada en esta sesión' : 'No activity recorded in this session'}</p>
-            )}
-          </div>
-        </div>
-
-        <div className="space-y-6">
-          <h4 className="header-label">{t.cluster_viz}</h4>
-          <div className="bg-white border border-[#E6E6E6] p-2 shadow-sm h-full overflow-hidden">
-            <AgentOffice logs={logs} />
-          </div>
+      <div className="space-y-6">
+        <h4 className="header-label">{t.cluster_viz}</h4>
+        <div className="bg-white border border-[#E6E6E6] p-2 shadow-sm overflow-hidden">
+          <AgentOffice logs={logs} lang={lang} />
         </div>
       </div>
     </div>
@@ -2807,23 +2849,9 @@ function AdvancedSettingsModal({
                 )}
 
                 {activeTab === 'HISTORY' && (
-                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-                    <div className="bg-white border border-[#E6E6E6] p-6 space-y-4">
-                      <p className="header-label">{isEs ? 'Bitacora tecnica' : 'Technical log'}</p>
-                      <div className="h-[55vh] overflow-y-auto custom-scrollbar font-mono text-[10px] text-gray-500 space-y-2">
-                        {logs.length > 0 ? logs.map((log, i) => (
-                          <p key={`${log.timestamp}-${i}`} className={cn(log.status === 'COMPLETED' ? "text-emerald-600" : "text-gray-700")}>
-                            [{new Date(log.timestamp).toLocaleTimeString()}] [{log.agent}] {log.message}
-                          </p>
-                        )) : (
-                          <p className="opacity-40 uppercase">{isEs ? 'Sin actividad tecnica en esta sesion' : 'No technical activity in this session'}</p>
-                        )}
-                      </div>
-                    </div>
-                    <div className="bg-white border border-[#E6E6E6] p-6 space-y-4">
-                      <p className="header-label">{isEs ? 'Orquestacion multiagente' : 'Multi-agent orchestration'}</p>
-                      <AgentOffice logs={logs} />
-                    </div>
+                  <div className="bg-white border border-[#E6E6E6] p-6 space-y-4">
+                    <p className="header-label">{isEs ? 'Orquestacion del sistema' : 'System orchestration'}</p>
+                    <AgentOffice logs={logs} lang={lang} />
                   </div>
                 )}
 

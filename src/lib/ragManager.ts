@@ -4,6 +4,27 @@ import { cosineSimilarity } from "./vector";
 
 let indexedKnowledgeBase: LegalContext[] = [];
 
+function getQuickLegalContext(query: string, redFlags: string[]) {
+  const terms = `${query} ${redFlags.join(' ')}`.toLowerCase();
+  const matches = LEGAL_KNOWLEDGE_BASE
+    .map((item) => {
+      const text = `${item.source} ${item.text}`.toLowerCase();
+      let score = 0;
+      for (const token of terms.split(/\s+/).filter(Boolean)) {
+        if (text.includes(token)) score += 1;
+      }
+      score += getBonus(item.text, redFlags) * 10;
+      return { ...item, score };
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3)
+    .filter((item) => item.score > 0);
+
+  return matches
+    .map((item) => `### ${item.source}\n${item.text}\n(Relevancia Forense: ${(Math.min(item.score / 10, 0.99) * 100).toFixed(1)}%)`)
+    .join("\n\n---\n\n");
+}
+
 async function initializeLocalIndex() {
   if (indexedKnowledgeBase.length > 0) return;
 
@@ -57,11 +78,15 @@ async function getLocalLegalContext(query: string, redFlags: string[]) {
 
 export async function getLegalContext(query: string, redFlags: string[] = []): Promise<string> {
   try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
     const response = await fetch("/api/rag/legal-context", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ query, redFlags }),
+      signal: controller.signal,
     });
+    clearTimeout(timeout);
 
     if (response.ok) {
       const payload = await response.json();
@@ -71,5 +96,14 @@ export async function getLegalContext(query: string, redFlags: string[] = []): P
     console.warn("Persistent RAG unavailable; falling back to local RAG.", error);
   }
 
-  return getLocalLegalContext(query, redFlags);
+  try {
+    return await Promise.race<string>([
+      getLocalLegalContext(query, redFlags),
+      new Promise<string>((resolve) => {
+        setTimeout(() => resolve(getQuickLegalContext(query, redFlags)), 2000);
+      }),
+    ]);
+  } catch {
+    return getQuickLegalContext(query, redFlags);
+  }
 }

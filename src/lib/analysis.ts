@@ -49,6 +49,21 @@ export async function analyzeContractGroup(
   contracts: Contract[],
   config: AnalysisConfig = DEFAULT_CONFIG
 ): Promise<AnalysisResult> {
+  if (contracts.length === 0) {
+    return {
+      groupKey,
+      providerName: 'PROVEEDOR_DESCONOCIDO',
+      contracts: [],
+      totalValue: 0,
+      similarityScore: 0,
+      maxDayDiff: 0,
+      risk: 'Green',
+      quickObservation: '',
+      redFlags: [],
+      detailedFindings: [],
+      riskScore: 0,
+    };
+  }
   const providerName = contracts[0].nombre_del_contratista;
   const totalValue = contracts.reduce((acc, contract) => acc + cleanValue(contract.valor_del_contrato), 0);
 
@@ -64,7 +79,8 @@ export async function analyzeContractGroup(
     }
   }
 
-  const embeddings = await Promise.all(contracts.map((contract) => getEmbedding(contract.objeto_del_contrato)));
+  const embeddingResults = await Promise.allSettled(contracts.map((contract) => getEmbedding(contract.objeto_del_contrato)));
+  const embeddings = embeddingResults.map((r) => (r.status === 'fulfilled' ? r.value : null));
   let totalSimilarity = 0;
   let pairs = 0;
 
@@ -180,7 +196,7 @@ export async function analyzeContractGroup(
   if (risk !== "Green") {
     quickObservation = await generateQuickObservation(
       `${contracts.length} contratos, riesgo ${riskScore}/100, flags [${redFlags.join(", ")}].`,
-      "ES"
+      "ES" as "ES" | "EN"
     );
   }
 

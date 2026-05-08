@@ -1,5 +1,6 @@
 import { generateForensicReport } from './gemini';
 import { getCachedReport, cacheReport } from './firebase';
+import type { AnalysisResult } from './analysis';
 
 export enum ModelProvider {
   OLLAMA = 'OLLAMA_LOCAL',
@@ -88,7 +89,9 @@ class NeuralManager {
       } catch (err) {
         console.error("Local Model Failed:", err);
         this.metrics.errorRate++;
-        return `[LOCAL ERR] Fallback: Simulated result for ${prompt.substring(0, 20)}`;
+        const modelToUpdate = this.models.find(m => m.provider === ModelProvider.LOCAL_LLAMA);
+        if (modelToUpdate) modelToUpdate.status = 'OFFLINE';
+        throw new Error('Local model unavailable. Switch to OLLAMA provider.');
       }
     }
 
@@ -105,7 +108,12 @@ class NeuralManager {
         }
 
         // 2. Generate new if not cached
-        const report = await generateForensicReport(options.result, options.lang);
+        const report = await Promise.race<string>([
+          generateForensicReport(options.result, options.lang),
+          new Promise<string>((_, reject) => {
+            setTimeout(() => reject(new Error('FORENSIC_REPORT_TIMEOUT')), 25000);
+          }),
+        ]).catch(() => buildEmergencyForensicReport(options.result, options.lang));
         const latency = Date.now() - startTime;
         this.updateMetrics(tokens, latency, model);
         
@@ -116,11 +124,10 @@ class NeuralManager {
       }
     }
 
-    const latency = model.latency + Math.random() * 200;
-    await new Promise(r => setTimeout(r, latency));
-    
+    // Non-FORENSIC OLLAMA calls (SYSTEM, TRAINING, etc.) are no-ops — they exist only for side-effect logging.
+    const latency = Date.now() - startTime;
     this.updateMetrics(tokens, latency, model);
-    return `[${this.activeProvider}] Processed via remote node. Entropy: ${Math.random().toFixed(4)}`;
+    return "";
   }
 
   private updateMetrics(tokens: number, latency: number, model: ModelConfig) {
@@ -131,3 +138,47 @@ class NeuralManager {
 }
 
 export const neuralManager = new NeuralManager();
+
+function buildEmergencyForensicReport(result: AnalysisResult, lang: 'ES' | 'EN' = 'ES') {
+  const isEs = lang === 'ES';
+  const flags = result.redFlags.slice(0, 5);
+  const entities = Array.from(new Set(result.contracts.map((contract) => contract.nombre_entidad))).slice(0, 4);
+
+  if (!isEs) {
+    return [
+      '# Forensic Audit Report',
+      '',
+      '## Executive Summary',
+      `The system prioritized **${result.providerName}** with a risk score of **${result.riskScore.toFixed(1)}/100** after reviewing **${result.contracts.length}** related contracts and an estimated exposure of **$${result.totalValue.toLocaleString()}**.`,
+      '',
+      '## Key Signals',
+      ...(flags.length > 0 ? flags.map((flag) => `- ${flag}`) : ['- No explicit textual signal was available in the fallback mode.']),
+      '',
+      '## Traceability',
+      `Reviewed entities: ${entities.join(', ') || 'Not available'}.`,
+      `Time window observed: ${result.maxDayDiff} day(s).`,
+      `Average semantic similarity: ${(result.similarityScore * 100).toFixed(1)}%.`,
+      '',
+      '## Immediate Recommendation',
+      'Prioritize documentary validation of the flagged contracts, verify the process references, and confirm whether the procurement need should have been consolidated under a more competitive procedure.',
+    ].join('\n');
+  }
+
+  return [
+    '# Informe de Auditoría Forense',
+    '',
+    '## Resumen Ejecutivo',
+    `El sistema priorizó a **${result.providerName}** con un puntaje de riesgo de **${result.riskScore.toFixed(1)}/100** tras revisar **${result.contracts.length}** contratos relacionados y una exposición estimada de **$${result.totalValue.toLocaleString()}**.`,
+    '',
+    '## Señales principales',
+    ...(flags.length > 0 ? flags.map((flag) => `- ${flag}`) : ['- No hubo una señal textual explícita disponible en el modo de contingencia.']),
+    '',
+    '## Trazabilidad',
+    `Entidades observadas: ${entities.join(', ') || 'No disponible'}.`,
+    `Ventana temporal observada: ${result.maxDayDiff} día(s).`,
+    `Similitud semántica promedio: ${(result.similarityScore * 100).toFixed(1)}%.`,
+    '',
+    '## Recomendación inmediata',
+    'Priorizar validación documental de los contratos señalados, verificar referencias del proceso y confirmar si la necesidad pública debía consolidarse bajo un procedimiento con mayor competencia.',
+  ].join('\n');
+}
