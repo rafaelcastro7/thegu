@@ -24,7 +24,7 @@ export const translations = {
       variance: 'Alertas de Alto Riesgo',
       purity: 'Confiabilidad del Sistema',
       pattern_discovery: 'Hallazgos de Auditoría (IA)',
-      export: 'Descargar Informe de Hallazgos',
+      export: 'Ver Informe de Hallazgos',
       syncing: 'Sincronizando con los servidores de SECOP II...',
       empty: 'Iniciando escaneo preventivo de entidades nacionales...'
     },
@@ -37,8 +37,8 @@ export const translations = {
       load_ref: 'Escaneo Rápido: Análisis de los 30 registros más recientes.'
     },
     cortex: {
-      topology: 'Monitoreo de Topología Neural',
-      active_node: 'Nodo Activo',
+      topology: 'Monitoreo de modelos y rendimiento',
+      active_node: 'Motor activo',
       inference_volume: 'Volumen de Inferencia',
       tokens_processed: 'Total de Tokens Procesados',
       economic_burn: 'Consumo Económico',
@@ -57,13 +57,13 @@ export const translations = {
       sensitivity: 'Ajuste de Sensibilidad',
       execute_cycle: 'Ejecutar Auditoría Global',
       scanning: 'Agentes Analizando Red...',
-      logic_feed: 'Bitácora de Pensamiento de la IA',
-      cluster_viz: 'Mapa de Colaboración de Agentes'
+      logic_feed: 'Bitácora operativa',
+      cluster_viz: 'Vista de actividad del sistema'
     },
     about: {
-      title: 'MANUAL TÉCNICO BHA (Bot de Hallazgos y Auditoría)',
+      title: 'MANUAL OPERATIVO GOBIA AUDITOR',
       mission: 'Misión de Vigilancia',
-      mission_text: 'BHA es una plataforma de inteligencia forense diseñada para la detección proactiva de fraccionamiento contractual y colusión en la contratación pública colombiana, utilizando Redes Neuronales y Análisis Vectorial.',
+      mission_text: 'GobIA Auditor es una plataforma de analítica forense diseñada para detectar fraccionamiento contractual y señales de baja competencia en la contratación pública colombiana.',
       how_it_works: 'Arquitectura del Sistema',
       step_1: 'Ingesta Bio-Inspirada',
       step_1_text: 'El sistema descarga en tiempo real procesos de SECOP II, analizando no solo el monto sino la densidad técnica del objeto contractual.',
@@ -74,9 +74,9 @@ export const translations = {
       manual: 'Guía de Operación',
       instruction_search: 'Busque entidades nacionales por su nombre oficial. El sistema descargará y procesará automáticamente los últimos 30-100 procesos.',
       instruction_risk: 'Revise los hallazgos en rojo. Cada uno cuenta con un "Auditor Interactivo" (Chatbot) que le explicará la base jurídica y técnica del riesgo encontrado.',
-      instruction_cache: 'Utilizamos Caché Colaborativa en la nube para sincronizar hallazgos entre diferentes auditores de la red BHA.',
-      juror_note: 'Nota Técnica BHA',
-      juror_text: 'BHA (Thegu en lengua Nassa: "Vigilante") no es un buscador; es un motor de inferencia que detecta cuando se oculta un gran contrato tras múltiples contratos pequeños para evadir la licitación pública.'
+      instruction_cache: 'El sistema reutiliza caché de análisis y reportes para acelerar revisiones posteriores.',
+      juror_note: 'Nota técnica del sistema',
+      juror_text: 'GobIA Auditor no es un buscador documental; es un motor de inferencia que detecta cuando una necesidad pública podría estar fragmentada en múltiples contratos de menor escala.'
     }
   },
   EN: {
@@ -101,7 +101,7 @@ export const translations = {
       variance: 'Red Flags',
       purity: 'AI Accuracy',
       pattern_discovery: 'Atypical Pattern Discovery',
-      export: 'Export Report',
+      export: 'Open Findings Report',
       syncing: 'Syncing data stream with SECOP II...',
       empty: 'Initiating automated discovery of irregularities...'
     },
@@ -114,8 +114,8 @@ export const translations = {
       load_ref: 'Reference Load: Quick scan of high-level patterns.'
     },
     cortex: {
-      topology: 'Neural Topology Monitoring',
-      active_node: 'Active Node',
+      topology: 'Model and performance monitoring',
+      active_node: 'Active engine',
       inference_volume: 'Inference Volume',
       tokens_processed: 'Total Tokens Processed',
       economic_burn: 'Economic Burn',
@@ -134,13 +134,13 @@ export const translations = {
       sensitivity: 'Sensitivity Adjustment',
       execute_cycle: 'Execute Global Audit',
       scanning: 'Agents Scanning Network...',
-      logic_feed: 'AI Thought Log',
-      cluster_viz: 'Agent Collaboration Map'
+      logic_feed: 'Operational log',
+      cluster_viz: 'System activity view'
     },
     about: {
-      title: 'BHA TECHNICAL MANUAL (Audit & Findings Bot)',
+      title: 'GOBIA AUDITOR OPERATING MANUAL',
       mission: 'Vigilance Mission',
-      mission_text: 'BHA is a forensic intelligence platform designed for the proactive detection of contract splitting and collusion in Colombian public procurement, using Neural Networks and Vector Analysis.',
+      mission_text: 'GobIA Auditor is a forensic analytics platform designed to detect contract splitting and weak-competition signals in Colombian public procurement.',
       how_it_works: 'System Architecture',
       step_1: 'Bio-Inspired Ingestion',
       step_1_text: 'The system downloads SECOP II processes in real-time, analyzing not just the amount but the technical density of the contractual object.',
@@ -151,9 +151,9 @@ export const translations = {
       manual: 'Operation Guide',
       instruction_search: 'Search for national entities by their official name. The system will automatically download and process the last 30-100 records.',
       instruction_risk: 'Review findings in red. Each one has an "Interactive Auditor" (Chatbot) that will explain the legal and technical basis of the detected risk.',
-      instruction_cache: 'We use Cloud Collaborative Cache to sync findings between different auditors in the BHA network.',
-      juror_note: 'BHA Technical Note',
-      juror_text: 'BHA (Thegu in Nassa language: "Watcher") is not a search engine; it is an inference engine that detects when a large contract is hidden behind multiple small contracts to evade public bidding.'
+      instruction_cache: 'The system reuses analysis and report caches to speed up subsequent reviews.',
+      juror_note: 'System technical note',
+      juror_text: 'GobIA Auditor is not a document search engine; it is an inference engine that detects when one public need may be fragmented into multiple smaller contracts.'
     }
   }
 };

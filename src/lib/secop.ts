@@ -5,6 +5,9 @@
 
 export interface Contract {
   id_contrato: string;
+  referencia_proceso?: string;
+  id_adjudicacion?: string;
+  url_proceso?: string;
   nombre_entidad: string;
   nit_entidad: string;
   departamento: string;
@@ -40,9 +43,23 @@ function escapeSoqlString(value: string) {
 
 function mapSecopRecord(record: Record<string, unknown>): Contract {
   const value = (key: string) => record[key]?.toString();
+  const processId = value("id_del_proceso") || "N/A";
+  const awardId = value("id_adjudicacion");
+  const reference = value("referencia_del_proceso");
+  const publishedAt = value("fecha_de_publicacion_del") || value("fecha_de_publicacion") || "NO_DATE";
+  const amount = value("precio_base") || "0";
+  const sourceUrl = value("urlproceso");
+  const uniqueContractId =
+    awardId ||
+    [processId, reference, publishedAt, amount]
+      .filter(Boolean)
+      .join("::");
 
   return {
-    id_contrato: value("id_del_proceso") || "N/A",
+    id_contrato: uniqueContractId,
+    referencia_proceso: reference || processId,
+    id_adjudicacion: awardId || undefined,
+    url_proceso: sourceUrl || undefined,
     nombre_entidad: value("entidad") || "ENTIDAD_DESCONOCIDA",
     nit_entidad: value("nit_entidad") || "N/A",
     departamento: value("departamento_entidad") || "N/A",
@@ -53,7 +70,7 @@ function mapSecopRecord(record: Record<string, unknown>): Contract {
         : value("entidad") || "PROVEEDOR_NO_IDENTIFICADO",
     documento_proveedor: value("nit_del_proveedor_adjudicado") || value("nit_entidad") || "0",
     valor_del_contrato: value("precio_base") || "0",
-    fecha_de_firma: value("fecha_de_publicacion_del") || value("fecha_de_publicacion") || new Date().toISOString(),
+    fecha_de_firma: publishedAt || new Date().toISOString(),
     objeto_del_contrato: value("descripci_n_del_procedimiento") || value("nombre_del_procedimiento") || "Sin descripción",
     modalidad_de_contratacion: value("modalidad_de_contratacion") || "No definida",
     estado_contrato: value("estado_resumen") || value("estado_del_procedimiento") || "Activo",

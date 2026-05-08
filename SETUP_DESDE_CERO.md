@@ -1,107 +1,92 @@
-# Script de instalación desde cero — GobIA Auditor
-### Pégale este prompt completo a Claude en el nuevo computador
+# Setup Desde Cero
 
----
+Guia operativa para levantar `GobIA Auditor` en otra maquina sin depender de contexto previo.
 
-## PROMPT PARA CLAUDE (copia y pega todo esto):
+## 1. Alcance
 
----
+Este documento deja el sistema listo para:
 
-Hola Claude. Necesito que me instales y dejes funcionando completamente el proyecto **GobIA Auditor** desde cero en este computador. Sigue estos pasos en orden, verifica cada uno antes de continuar, y dime si algo falla.
+- ejecutar frontend y backend locales
+- conectar PostgreSQL para cache persistente
+- usar Ollama como motor local de generacion y embeddings
+- validar salud tecnica con `lint`, `build` y pruebas E2E
+- exponer una URL web publica temporal desde la misma maquina si hace falta
 
----
+## 2. Requisitos del equipo
 
-## PASO 1 — Verificar prerequisitos del sistema
+Instala y verifica lo siguiente:
 
-Verifica que el sistema tenga instalado:
-- **Node.js v20+** (`node --version`)
-- **npm v10+** (`npm --version`)
-- **Git** (`git --version`)
-- **Docker Desktop** (abre y verifica que el daemon esté corriendo: `docker info`)
-- **Ollama** (`ollama --version`)
+- `Git`
+- `Node.js 22 LTS` o superior
+- `npm 10+`
+- `Docker Desktop`
+- `Ollama`
+- `PowerShell` con permisos normales de ejecucion
 
-Si alguno falta, instálalo así:
+Comandos de verificacion:
 
-### Node.js (si falta)
-Descarga e instala desde https://nodejs.org/en/download (LTS v22). En Windows usa el instalador `.msi`.
+```powershell
+git --version
+node --version
+npm --version
+docker info
+ollama --version
+```
 
-### Git (si falta)
-Descarga desde https://git-scm.com/downloads e instala con opciones por defecto.
+## 3. Clonar el repositorio
 
-### Docker Desktop (si falta)
-Descarga desde https://www.docker.com/products/docker-desktop/ e instala. Luego ábrelo y espera que el daemon arranque (ícono en la barra de tareas).
-
-### Ollama (si falta)
-Descarga desde https://ollama.com/download e instala. Luego en terminal: `ollama serve` (déjalo corriendo en segundo plano).
-
----
-
-## PASO 2 — Clonar el repositorio
-
-```bash
+```powershell
 git clone https://github.com/rafaelcastro7/thegu.git
 cd thegu
 ```
 
-Verifica que existan estos archivos clave después del clone:
-- `server.ts`
-- `package.json`
-- `src/server/app.ts`
-- `src/lib/analysis.ts`
-- `.env.example`
+Para reproducir exactamente el estado actual de trabajo:
 
----
-
-## PASO 3 — Crear el archivo `.env`
-
-Crea el archivo `.env` en la raíz del proyecto con este contenido exacto:
-
+```powershell
+git checkout codex/pro-backend-rag-v2
+git pull origin codex/pro-backend-rag-v2
 ```
+
+Si la rama ya fue fusionada, puedes usar `main` o la rama oficial vigente.
+
+## 4. Variables de entorno
+
+Copia `.env.example` a `.env`:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Contenido esperado:
+
+```env
 PORT=3000
 
-# PostgreSQL
+# PostgreSQL cache
 DB_HOST=localhost
 DB_PORT=5433
+DB_NAME=aiagency
 DB_USER=aiuser
 DB_PASSWORD=changeme
-DB_NAME=aiagency
 
-# Ollama (LLM local)
+# Local Ollama runtime used by the backend proxy
 OLLAMA_HOST=http://localhost:11434
 OLLAMA_TIMEOUT_MS=180000
 
-# Express
+# Express JSON body limit
 JSON_LIMIT=50mb
 ```
 
----
+## 5. Instalar dependencias Node
 
-## PASO 4 — Instalar dependencias Node
-
-```bash
+```powershell
 npm install
 ```
 
-Verifica que no haya errores críticos. Advertencias (warnings) son aceptables.
+## 6. Levantar PostgreSQL con Docker
 
----
+Crear el contenedor recomendado:
 
-## PASO 5 — Levantar PostgreSQL con Docker
-
-Ejecuta este comando para crear y arrancar un contenedor PostgreSQL dedicado para el proyecto:
-
-```bash
-docker run -d \
-  --name thegu_postgres \
-  -e POSTGRES_USER=aiuser \
-  -e POSTGRES_PASSWORD=changeme \
-  -e POSTGRES_DB=aiagency \
-  -p 5433:5432 \
-  --restart unless-stopped \
-  postgres:16-alpine
-```
-
-**En Windows PowerShell usa backtick (`) en lugar de backslash (\):**
 ```powershell
 docker run -d `
   --name thegu_postgres `
@@ -113,219 +98,252 @@ docker run -d `
   postgres:16-alpine
 ```
 
-Espera 5 segundos y verifica que esté listo:
-```bash
-docker exec thegu_postgres pg_isready -U aiuser -d aiagency
-```
-Debe responder: `/var/run/postgresql:5432 - accepting connections`
+Si ya existe:
 
-Si el contenedor ya existe de antes, arráncalo con:
-```bash
+```powershell
 docker start thegu_postgres
 ```
 
----
+Verificacion:
 
-## PASO 6 — Descargar modelos de Ollama
-
-Estos modelos son necesarios para que el sistema funcione. Descárgalos en orden (pueden tardar varios minutos dependiendo de la conexión):
-
-```bash
-# Modelo de embeddings (obligatorio para análisis semántico)
-ollama pull nomic-embed-text
-
-# LLM principal para generación de reportes forenses
-ollama pull tinyllama
-
-# LLM fallback 1
-ollama pull gemma2:2b
-
-# LLM fallback 2 (más preciso, más pesado ~2.5GB)
-ollama pull qwen2.5:3b
+```powershell
+docker exec thegu_postgres pg_isready -U aiuser -d aiagency
 ```
 
-Verifica que estén instalados:
-```bash
+Respuesta esperada:
+
+```text
+/var/run/postgresql:5432 - accepting connections
+```
+
+## 7. Instalar modelos de Ollama
+
+El sistema usa:
+
+- `tinyllama:latest`
+- `gemma4-fast:latest`
+- `qwen3:4b`
+- `nomic-embed-text`
+
+Instalacion recomendada:
+
+```powershell
+ollama pull tinyllama
+ollama pull gemma2:2b
+ollama pull qwen2.5:3b
+ollama pull nomic-embed-text
+```
+
+Crear alias para que coincidan con el codigo del proyecto:
+
+```powershell
+ollama copy gemma2:2b gemma4-fast:latest
+ollama copy qwen2.5:3b qwen3:4b
+```
+
+Verificar modelos:
+
+```powershell
 ollama list
 ```
-Deben aparecer: `nomic-embed-text`, `tinyllama`, `gemma2:2b`, `qwen2.5:3b`
 
-> **Nota importante:** El proyecto usa `tinyllama:latest`, `gemma4-fast:latest` y `qwen3:4b` en el código. Si esos nombres exactos no están disponibles en tu versión de Ollama, los modelos recomendados arriba son los equivalentes funcionales. Si quieres usar los nombres exactos del código, ejecuta adicionalmente:
-> ```bash
-> ollama pull qwen2.5:3b
-> ollama copy qwen2.5:3b qwen3:4b
-> ```
+Debes ver como minimo estos nombres disponibles para el runtime:
 
----
+- `tinyllama:latest`
+- `gemma4-fast:latest`
+- `qwen3:4b`
+- `nomic-embed-text`
 
-## PASO 7 — Verificar que Ollama está corriendo
+## 8. Verificar Ollama
 
-En una terminal separada (o en background), asegúrate que Ollama esté sirviendo:
+En muchos equipos Windows queda corriendo como servicio. Si no, inicia el servidor:
 
-```bash
+```powershell
 ollama serve
 ```
 
-Si ya está corriendo como servicio del sistema (Windows/Mac lo hacen automáticamente al instalar), este comando dirá que el puerto ya está en uso — eso está bien, significa que ya está activo.
+Verificacion:
 
-Verifica:
-```bash
+```powershell
 curl http://localhost:11434/api/tags
 ```
-Debe responder con un JSON listando los modelos instalados.
 
----
+## 9. Arrancar la aplicacion
 
-## PASO 8 — Arrancar el servidor de desarrollo
+Modo desarrollo:
 
-```bash
+```powershell
 npm run dev
 ```
 
-Debes ver en consola:
+Modo produccion local:
+
+```powershell
+npm run build
+$env:NODE_ENV="production"
+npm start
 ```
+
+Salida esperada:
+
+```text
 Server running on http://0.0.0.0:3000 (Ollama: http://localhost:11434)
 ```
 
-Y también el banner de Vite con el frontend.
+## 10. Verificaciones funcionales
 
----
+### 10.1 Salud del backend
 
-## PASO 9 — Verificar que todo funciona
-
-Ejecuta estas verificaciones en orden:
-
-### 9.1 Health check del backend
-```bash
+```powershell
 curl http://localhost:3000/api/health
 ```
+
 Respuesta esperada:
+
 ```json
 {"status":"ok","database":"connected","ollamaHost":"http://localhost:11434"}
 ```
 
-### 9.2 Verificar frontend
-Abre en el navegador: **http://localhost:3000**
-Debe cargar la interfaz de GobIA Auditor con el panel de búsqueda.
+### 10.2 Frontend
 
-### 9.3 Prueba funcional básica
-En la interfaz, busca la entidad `CARDIQUE` y espera que carguen los contratos del SECOP II. Si la API pública de datos.gov.co responde, deben aparecer contratos y análisis de riesgo.
+Abre:
 
-### 9.4 Verificar embeddings (Ollama)
-```bash
-curl -X POST http://localhost:3000/api/ollama/embeddings \
-  -H "Content-Type: application/json" \
-  -d '{"model":"nomic-embed-text","prompt":"contrato de prestación de servicios"}'
+```text
+http://localhost:3000
 ```
-Debe responder con un array de 768 números.
 
-### 9.5 Verificar RAG jurídico
-```bash
-curl -X POST http://localhost:3000/api/rag/legal-context \
-  -H "Content-Type: application/json" \
-  -d '{"query":"fraccionamiento contractual","redFlags":["fraccionamiento"]}'
+La interfaz debe cargar como `GobIA Auditor`.
+
+### 10.3 Proxy SECOP
+
+```powershell
+curl "http://localhost:3000/api/secop/contracts?entity=SENA&limit=3"
 ```
-Debe responder con texto de la Ley 80 y otras fuentes legales.
 
----
+Debe devolver un arreglo JSON con contratos reales.
 
-## PASO 10 — Configurar inicio automático (opcional pero recomendado)
+### 10.4 Embeddings
 
-Para que el contenedor PostgreSQL arranque solo cuando Docker Desktop inicia, ya tiene `--restart unless-stopped`. Solo asegúrate de que Docker Desktop esté configurado para iniciar con Windows:
-- Docker Desktop → Settings → General → "Start Docker Desktop when you sign in" ✅
+```powershell
+curl -X POST http://localhost:3000/api/ollama/embeddings `
+  -H "Content-Type: application/json" `
+  -d '{"model":"nomic-embed-text","prompt":"contrato de prestacion de servicios"}'
+```
 
-Para Ollama, en Windows se instala como servicio automático.
+### 10.5 Contexto legal persistente
 
----
+```powershell
+curl -X POST http://localhost:3000/api/rag/legal-context `
+  -H "Content-Type: application/json" `
+  -d '{"query":"posible fraccionamiento contractual","redFlags":["fraccionamiento","competencia"]}'
+```
 
-## RESUMEN DE SERVICIOS CORRIENDO
+## 11. Validacion tecnica obligatoria
 
-| Servicio | Puerto | Comando para verificar |
-|----------|--------|----------------------|
-| PostgreSQL (Docker) | 5433 | `docker ps \| grep thegu_postgres` |
-| Ollama (LLM local) | 11434 | `curl http://localhost:11434/api/tags` |
-| GobIA Auditor (dev) | 3000 | `curl http://localhost:3000/api/health` |
-| Frontend (Vite) | 3000 | Abrir http://localhost:3000 en browser |
+Ejecuta estas tres verificaciones antes de dar por instalado el entorno:
 
----
+```powershell
+npm run lint
+npm run build
+npm run test:e2e
+```
 
-## TROUBLESHOOTING COMÚN
+Estado validado en esta rama:
 
-### Error: `connect ECONNREFUSED 127.0.0.1:5433`
-→ El contenedor PostgreSQL no está corriendo.
-```bash
+- `npm run lint` pasa
+- `npm run build` pasa
+- `npm run test:e2e` pasa
+
+## 12. Publicar temporalmente desde la misma maquina
+
+Si necesitas una URL web publica sin desplegar a infraestructura externa, el repo incluye scripts para usar `cloudflared`.
+
+Requisito adicional:
+
+- `cloudflared` instalado en `C:\Program Files (x86)\cloudflared\cloudflared.exe`
+
+Iniciar publicacion:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\start-public.ps1
+```
+
+Esto:
+
+- levanta el servidor en `PORT=3055`
+- valida `api/health`
+- abre un `Quick Tunnel`
+- guarda la URL publica en `PUBLIC_URL.txt`
+
+Detener publicacion:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\stop-public.ps1
+```
+
+## 13. Dependencias operativas del sistema
+
+Servicios que deben estar disponibles para la experiencia completa:
+
+| Servicio | Puerto | Verificacion |
+| --- | --- | --- |
+| PostgreSQL Docker | `5433` | `docker exec thegu_postgres pg_isready -U aiuser -d aiagency` |
+| Ollama | `11434` | `curl http://localhost:11434/api/tags` |
+| App local | `3000` | `curl http://localhost:3000/api/health` |
+| Publicacion opcional | `3055` | `Get-Content .\PUBLIC_URL.txt` |
+
+## 14. Comandos utiles
+
+```powershell
+git status --short
+npm run lint
+npm run build
+npm run test:e2e
+docker ps
+ollama list
+```
+
+## 15. Troubleshooting rapido
+
+### El backend responde con fallback de memoria
+
+Si `/api/health` no muestra `database: connected`, revisa:
+
+```powershell
+docker ps
 docker start thegu_postgres
-# Si no existe:
-docker run -d --name thegu_postgres -e POSTGRES_USER=aiuser -e POSTGRES_PASSWORD=changeme -e POSTGRES_DB=aiagency -p 5433:5432 postgres:16-alpine
+docker logs thegu_postgres --tail 100
 ```
 
-### Error: `connect ECONNREFUSED 127.0.0.1:11434`
-→ Ollama no está corriendo.
-```bash
+### El modelo local no responde
+
+```powershell
+curl http://localhost:11434/api/tags
+ollama list
 ollama serve
 ```
 
-### Error al descargar contratos del SECOP II
-→ Problema de conectividad con `datos.gov.co`. Verifica conexión a internet. La API es pública pero a veces tiene latencia alta.
+### Falla `npm run test:e2e`
 
-### Error: `model not found` en generación de reportes
-→ El modelo Ollama no está descargado.
-```bash
-ollama pull tinyllama
+La suite E2E depende de:
+
+- acceso real a SECOP
+- Ollama activo
+- PostgreSQL operativo
+
+Revisa primero:
+
+```powershell
+curl http://localhost:3000/api/health
+curl "http://localhost:3000/api/secop/contracts?entity=SENA&limit=1"
 ```
 
-### Puerto 3000 en uso
-→ Cambia `PORT=3001` en el `.env` y reinicia.
+## 16. Resultado esperado
 
-### Error de TypeScript al arrancar
-→ Los errores de TS no bloquean `tsx` en dev mode. Solo importan en `npm run lint`.
+La maquina queda lista para:
 
----
-
-## ESTRUCTURA DEL PROYECTO (referencia)
-
-```
-thegu/
-├── server.ts              ← Punto de entrada (Express + DB init)
-├── src/
-│   ├── server/
-│   │   ├── app.ts         ← Rutas API Express
-│   │   ├── config.ts      ← Variables de entorno
-│   │   ├── database.ts    ← PostgreSQL pool + init tablas
-│   │   ├── ollama.ts      ← Proxy hacia Ollama
-│   │   ├── rag.ts         ← RAG jurídico persistente
-│   │   └── http.ts        ← Helpers HTTP
-│   ├── lib/
-│   │   ├── analysis.ts    ← Motor forense multi-algoritmo
-│   │   ├── agents.ts      ← Orquestación multi-agente
-│   │   ├── intelligence.ts← Reglas + auto-aprendizaje
-│   │   ├── secop.ts       ← Cliente API SECOP II
-│   │   ├── gemini.ts      ← Generación de reportes LLM
-│   │   ├── ragManager.ts  ← RAG client-side
-│   │   ├── legalKnowledgeBase.ts ← Corpus jurídico
-│   │   ├── vector.ts      ← Similitud coseno
-│   │   ├── neuralManager.ts ← Gestión de modelos
-│   │   └── firebase.ts    ← Caché Firebase (opcional)
-│   └── App.tsx            ← Frontend React principal
-├── .env                   ← Variables de entorno (crear manualmente)
-├── .env.example           ← Plantilla
-├── package.json
-├── vite.config.ts
-└── playwright.config.ts
-```
-
----
-
-## DATOS TÉCNICOS DEL PROYECTO
-
-- **Repo:** https://github.com/rafaelcastro7/thegu.git
-- **Rama principal:** `main`
-- **Rama de desarrollo activo:** `codex/pro-backend-rag-v2`
-- **Stack:** React 19 + TypeScript + Vite + Express + PostgreSQL + Ollama
-- **Node mínimo:** v20
-- **Puerto dev:** 3000
-- **Puerto PostgreSQL:** 5433
-
----
-
-*GobIA Auditor — Colombia 5.0 · Mayo 2026*
+- buscar contratos reales desde SECOP
+- generar analisis y reportes dentro de la interfaz
+- usar caché persistente en PostgreSQL
+- responder consultas del auditor interactivo con Ollama local
+- correr pruebas E2E y publicar una demo temporal desde web

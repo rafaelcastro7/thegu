@@ -26,8 +26,10 @@ import { TechnicalFindings } from './components/TechnicalFindings';
 import { runIntelligenceAudit, learnFromFindings } from './lib/intelligence';
 import { translations, Language } from './lib/i18n';
 import { getCachedAnalysis, cacheAnalysis } from './lib/firebase';
-import { chatAboutFinding } from './lib/gemini';
+import { AuditChatMessage, chatAboutFinding, generateAdaptiveAuditQA, SuggestedAuditQA } from './lib/gemini';
 import { NOTORIOUS_ENTITIES } from './lib/intelligence';
+import { LEGAL_KNOWLEDGE_BASE } from './lib/legalKnowledgeBase';
+import { primeAuditExperience } from './lib/localAgents';
 
 interface NeuralMemorySnapshot {
   totalAudits?: number;
@@ -47,6 +49,15 @@ interface AuditPanelBridge {
   latestAgent: string | null;
   latestStatus: string | null;
   latestMessage: string | null;
+}
+
+interface SourcePreview {
+  url: string;
+  title: string;
+  fetchedAt: string;
+  statusCode: number;
+  excerpt: string;
+  bodyText: string;
 }
 
 const NEURAL_MEMORY_KEY = 'gob_ia_neural_memory';
@@ -90,9 +101,76 @@ function formatCompactCop(value: number) {
   return `$${value.toLocaleString()}`;
 }
 
+function parseContractValue(value: string) {
+  const numeric = Number.parseFloat(String(value || '').replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function normalizeDisplayName(value: string) {
+  const normalized = value?.trim().replace(/\s+/g, ' ');
+  return normalized || 'ENTIDAD_DESCONOCIDA';
+}
+
+function uniqueEntityNames(contracts: Contract[]) {
+  return Array.from(new Set(contracts.map(contract => normalizeDisplayName(contract.nombre_entidad))));
+}
+
+function uniqueDepartmentNames(contracts: Contract[]) {
+  return Array.from(
+    new Set(
+      contracts
+        .map(contract => normalizeDisplayName(contract.departamento))
+        .filter(value => value !== 'N/A' && value !== 'ENTIDAD_DESCONOCIDA')
+    )
+  );
+}
+
+function summarizeList(items: string[], limit = 2) {
+  const filtered = items.filter(Boolean);
+  if (filtered.length <= limit) return filtered.join(' / ');
+  return `${filtered.slice(0, limit).join(' / ')} +${filtered.length - limit}`;
+}
+
+function formatAuditDate(value: string, lang: Language) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return lang === 'ES' ? 'Sin fecha' : 'No date';
+
+  return date.toLocaleDateString(lang === 'ES' ? 'es-CO' : 'en-CA', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
+function getContractSourceUrl(contract: Contract) {
+  return contract.url_proceso || `https://www.secop.gov.co/Consultas/busqueda/detalle-del-proceso.aspx?IdProcess=${encodeURIComponent(contract.referencia_proceso || contract.id_contrato)}`;
+}
+
+function getContractDisplayId(contract: Contract) {
+  return contract.id_adjudicacion || contract.referencia_proceso || contract.id_contrato;
+}
+
+function buildSourceEvidenceRows(contract: Contract, lang: Language) {
+  return [
+    { label: lang === 'ES' ? 'Entidad' : 'Entity', value: contract.nombre_entidad },
+    { label: lang === 'ES' ? 'Proveedor' : 'Provider', value: contract.nombre_del_contratista },
+    { label: lang === 'ES' ? 'NIT entidad' : 'Entity tax ID', value: contract.nit_entidad || 'N/A' },
+    { label: lang === 'ES' ? 'NIT proveedor' : 'Provider tax ID', value: contract.documento_proveedor || 'N/A' },
+    { label: lang === 'ES' ? 'Departamento' : 'Department', value: contract.departamento || 'N/A' },
+    { label: lang === 'ES' ? 'Ciudad' : 'City', value: contract.ciudad || 'N/A' },
+    { label: lang === 'ES' ? 'Modalidad' : 'Modality', value: contract.modalidad_de_contratacion || 'N/A' },
+    { label: lang === 'ES' ? 'Estado' : 'Status', value: contract.estado_contrato || 'N/A' },
+    { label: lang === 'ES' ? 'Fecha' : 'Date', value: contract.fecha_de_firma || 'N/A' },
+    { label: lang === 'ES' ? 'Valor' : 'Amount', value: contract.valor_del_contrato || 'N/A' },
+    { label: lang === 'ES' ? 'Proceso' : 'Process', value: contract.referencia_proceso || 'N/A' },
+    { label: lang === 'ES' ? 'Adjudicacion' : 'Award', value: contract.id_adjudicacion || 'N/A' },
+  ];
+}
+
 export default function App() {
   const [lang, setLang] = useState<Language>('ES');
   const t = translations[lang];
+  const isEs = lang === 'ES';
 
   const [entitySearch, setEntitySearch] = useState('CARDIQUE');
   const [loading, setLoading] = useState(false);
@@ -106,14 +184,25 @@ export default function App() {
   const [sortBy, setSortBy] = useState<'value' | 'similarity' | 'recent' | 'risk'>('risk');
   const [copied, setCopied] = useState(false);
   const [systemHealth, setSystemHealth] = useState(98.42);
-  const [activeView, setActiveView] = useState<'DASHBOARD' | 'HISTORY' | 'CORTEX' | 'ABOUT' | 'KNOWLEDGE'>('DASHBOARD');
+  const [activeView, setActiveView] = useState<'AUDIT' | 'SYSTEM'>('AUDIT');
+  const [systemTab, setSystemTab] = useState<'OVERVIEW' | 'SOURCES' | 'FLOW' | 'KNOWLEDGE'>('OVERVIEW');
   const [neuralMemory, setNeuralMemory] = useState<NeuralMemorySnapshot | null>(() => readStoredNeuralMemory());
-  const [statusMessage, setStatusMessage] = useState('SYSTEM_IDLE');
+  const [statusMessage, setStatusMessage] = useState(isEs ? 'Listo para auditar' : 'Ready to audit');
   const [progress, setProgress] = useState(0);
   const [activeChatFinding, setActiveChatFinding] = useState<any | null>(null);
   const [chatMessages, setChatMessages] = useState<{role: 'user' | 'ai', content: string}[]>([]);
   const [chatLoading, setChatLoading] = useState(false);
   const [expandedContract, setExpandedContract] = useState<string | null>(null);
+  const [showEvidenceDossier, setShowEvidenceDossier] = useState(false);
+  const [focusedEvidenceId, setFocusedEvidenceId] = useState<string | null>(null);
+  const [suggestedAuditQA, setSuggestedAuditQA] = useState<SuggestedAuditQA[]>([]);
+  const [suggestedAuditLoading, setSuggestedAuditLoading] = useState(false);
+  const [sourceContract, setSourceContract] = useState<Contract | null>(null);
+  const [sourcePreview, setSourcePreview] = useState<SourcePreview | null>(null);
+  const [sourceLoading, setSourceLoading] = useState(false);
+  const [sourceError, setSourceError] = useState<string | null>(null);
+  const [showEscalationGuide, setShowEscalationGuide] = useState(false);
+  const [showFindingsOverview, setShowFindingsOverview] = useState(false);
 
   const auditPanelBridge = useMemo<AuditPanelBridge>(() => {
     const sortedByRisk = [...results].sort((a, b) => b.riskScore - a.riskScore);
@@ -141,7 +230,7 @@ export default function App() {
   
   const handleRetroactiveAudit = (memorySnapshot: NeuralMemorySnapshot | null = neuralMemory) => {
     setLoading(true);
-    setStatusMessage(lang === 'ES' ? 'SINCRONIZANDO CENTRO ANALITICO -> PANEL...' : 'SYNCING ANALYTIC HUB -> AUDIT PANEL...');
+    setStatusMessage(lang === 'ES' ? 'Actualizando hallazgos con aprendizaje reciente...' : 'Refreshing findings with recent learning...');
     const memoryPatterns = getMemoryPatterns(memorySnapshot);
 
     setTimeout(() => {
@@ -152,7 +241,7 @@ export default function App() {
           const memoryBoost = Math.min(12, matchedMemory.length * 4);
           const riskScore = Math.min(100, res.riskScore + (intel.riskScore * 0.3) + memoryBoost);
           const learningFlags = matchedMemory.length > 0
-            ? [lang === 'ES' ? `Memoria neural revalido ${matchedMemory.length} patron(es) historico(s)` : `Neural memory revalidated ${matchedMemory.length} historical pattern(s)`]
+            ? [lang === 'ES' ? `La revisión histórica confirmó ${matchedMemory.length} patrón(es) recurrente(s)` : `Historical review confirmed ${matchedMemory.length} recurring pattern(s)`]
             : [];
 
           return {
@@ -171,7 +260,7 @@ export default function App() {
         return updated;
       });
       setLoading(false);
-      setStatusMessage(lang === 'ES' ? 'PANEL_SINCRONIZADO_CON_CENTRO' : 'PANEL_SYNCED_WITH_HUB');
+      setStatusMessage(lang === 'ES' ? 'Hallazgos actualizados' : 'Findings updated');
     }, 1500);
   };
 
@@ -207,7 +296,7 @@ export default function App() {
       const topEntities = NOTORIOUS_ENTITIES.slice(0, 10);
       
       setLoading(true);
-      setStatusMessage(lang === 'ES' ? 'INICIANDO PROTOCOLO BHA (THEGU)...' : 'INITIATING BHA (THEGU) PROTOCOL...');
+      setStatusMessage(lang === 'ES' ? 'Iniciando revisión automática...' : 'Starting automated review...');
       
       const registry = new Set<string>();
       
@@ -276,11 +365,18 @@ export default function App() {
       }
       setProgress(100);
       setLoading(false);
-      setStatusMessage("SYSTEM_SYNCED");
+      setStatusMessage(lang === 'ES' ? 'Monitoreo inicial completado' : 'Initial monitoring completed');
     };
 
     bootstrapDiscovery();
   }, []);
+
+  useEffect(() => {
+    const anchor = document.getElementById('chat-bottom');
+    if (anchor) {
+      anchor.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+  }, [chatLoading, chatMessages, suggestedAuditQA]);
 
   const filteredResults = useMemo(() => {
     let list = [...results];
@@ -296,27 +392,107 @@ export default function App() {
     return list;
   }, [results, filterRisk, sortBy]);
 
+  const auditedEntities = useMemo(() => {
+    const entityMap = new Map<string, {
+      name: string;
+      contracts: number;
+      exposure: number;
+      redFindings: number;
+      providers: Set<string>;
+      departments: Set<string>;
+      lastDate: string | null;
+    }>();
+
+    results.forEach(result => {
+      const touchedEntities = new Set<string>();
+
+      result.contracts.forEach(contract => {
+        const entityName = normalizeDisplayName(contract.nombre_entidad);
+        const current = entityMap.get(entityName) || {
+          name: entityName,
+          contracts: 0,
+          exposure: 0,
+          redFindings: 0,
+          providers: new Set<string>(),
+          departments: new Set<string>(),
+          lastDate: null,
+        };
+
+        current.contracts += 1;
+        current.exposure += parseContractValue(contract.valor_del_contrato);
+        current.providers.add(result.providerName);
+
+        if (contract.departamento && contract.departamento !== 'N/A') {
+          current.departments.add(contract.departamento);
+        }
+
+        if (!current.lastDate || new Date(contract.fecha_de_firma).getTime() > new Date(current.lastDate).getTime()) {
+          current.lastDate = contract.fecha_de_firma;
+        }
+
+        entityMap.set(entityName, current);
+        touchedEntities.add(entityName);
+      });
+
+      if (result.risk === 'Red') {
+        touchedEntities.forEach(entityName => {
+          const current = entityMap.get(entityName);
+          if (current) current.redFindings += 1;
+        });
+      }
+    });
+
+    return Array.from(entityMap.values())
+      .map(entity => ({
+        name: entity.name,
+        contracts: entity.contracts,
+        exposure: entity.exposure,
+        redFindings: entity.redFindings,
+        providerCount: entity.providers.size,
+        departments: Array.from(entity.departments),
+        lastDate: entity.lastDate,
+      }))
+      .sort((a, b) => {
+        if (b.redFindings !== a.redFindings) return b.redFindings - a.redFindings;
+        if (b.exposure !== a.exposure) return b.exposure - a.exposure;
+        return b.contracts - a.contracts;
+      });
+  }, [results]);
+
+  const auditCoverage = useMemo(() => {
+    const totalContracts = results.reduce((sum, result) => sum + result.contracts.length, 0);
+    const providerCount = new Set(results.map(result => result.providerName)).size;
+    const departments = new Set(auditedEntities.flatMap(entity => entity.departments));
+
+    return {
+      totalContracts,
+      providerCount,
+      entityCount: auditedEntities.length,
+      departmentCount: departments.size,
+    };
+  }, [auditedEntities, results]);
+
   async function handleSearch(targetSearch?: string) {
     const searchVal = targetSearch || entitySearch;
     if (!searchVal) return;
     
     setLoading(true);
-    setStatusMessage("UPLINK_INITIATED");
+    setStatusMessage(lang === 'ES' ? 'Preparando consulta...' : 'Preparing query...');
     setResults([]);
     setAiReport(null);
     setSelectedResult(null);
 
     try {
-      setStatusMessage("DIAL: SECOP_II_BRIDGE");
+      setStatusMessage(lang === 'ES' ? 'Consultando SECOP II...' : 'Querying SECOP II...');
       const contracts = await fetchContractsByEntity(searchVal, 10);
       
       if (contracts.length === 0) {
-        setStatusMessage(lang === 'ES' ? "CERO_RESULTADOS" : "ZERO_RECORDS_FOUND");
+        setStatusMessage(lang === 'ES' ? "No se encontraron registros" : "No records found");
         setLoading(false);
         return;
       }
 
-      setStatusMessage(`INGEST: ${contracts.length}_NODES`);
+      setStatusMessage(lang === 'ES' ? `${contracts.length} contratos cargados para análisis` : `${contracts.length} contracts loaded for analysis`);
       const groups = groupContractsByProvider(contracts);
       
       const analyzed: AnalysisResult[] = [];
@@ -337,10 +513,10 @@ export default function App() {
       }
       
       setResults(analyzed);
-      setStatusMessage("IDLE");
+      setStatusMessage(lang === 'ES' ? 'Consulta completada' : 'Query completed');
     } catch (error) {
       console.error(error);
-      setStatusMessage("ERROR: CONNECTION_FAILURE");
+      setStatusMessage(lang === 'ES' ? 'No fue posible completar la consulta' : 'The query could not be completed');
     } finally {
       setLoading(false);
     }
@@ -360,6 +536,11 @@ export default function App() {
       setAiReport(report);
       setAgentLogs(logs);
       setNeuralMemory(memory);
+      void primeAuditExperience({
+        result,
+        lang,
+        onLog: (entry) => setAgentLogs((prev) => [...prev, entry].slice(-60)),
+      });
     } catch (error) {
       console.error(error);
       setAiReport(lang === 'ES' ? "Error en Síntesis de Auditoría. Verifique que Ollama esté en ejecución." : "Audit Synthesis Failure. Please check if Ollama is running.");
@@ -368,14 +549,73 @@ export default function App() {
     }
   }
 
+  async function openInteractiveAudit(finding: any) {
+    if (!selectedResult) return;
+    setActiveChatFinding(finding);
+    setChatMessages([]);
+    setSuggestedAuditQA([]);
+    setSuggestedAuditLoading(true);
+
+    try {
+      void primeAuditExperience({
+        result: selectedResult,
+        lang,
+        onLog: (entry) => setAgentLogs((prev) => [...prev, entry].slice(-60)),
+      });
+      const suggestions = await generateAdaptiveAuditQA(selectedResult, finding, [], lang);
+      setSuggestedAuditQA(suggestions);
+    } catch (error) {
+      console.error(error);
+      setSuggestedAuditQA([]);
+    } finally {
+      setSuggestedAuditLoading(false);
+    }
+  }
+
+  function applySuggestedAuditQA(item: SuggestedAuditQA) {
+    const nextMessages: AuditChatMessage[] = [
+      { role: 'user', content: item.question },
+      { role: 'ai', content: item.answer },
+    ];
+
+    setChatMessages(nextMessages);
+    if (selectedResult && activeChatFinding) {
+      setSuggestedAuditLoading(true);
+      generateAdaptiveAuditQA(selectedResult, activeChatFinding, nextMessages, lang)
+        .then(setSuggestedAuditQA)
+        .catch((error) => {
+          console.error(error);
+          setSuggestedAuditQA([]);
+        })
+        .finally(() => setSuggestedAuditLoading(false));
+    }
+  }
+
   async function handleSendMessage(text: string) {
     if (!activeChatFinding || !selectedResult || !text.trim()) return;
+    const suggestionMatch = suggestedAuditQA.find(item => item.question.trim().toLowerCase() === text.trim().toLowerCase());
+    if (suggestionMatch) {
+      applySuggestedAuditQA(suggestionMatch);
+      return;
+    }
+
     const userMsg = { role: 'user' as const, content: text };
+    const historyBefore = [...chatMessages];
     setChatMessages(prev => [...prev, userMsg]);
     setChatLoading(true);
     try {
       const response = await chatAboutFinding(selectedResult, activeChatFinding, text, lang);
-      setChatMessages(prev => [...prev, { role: 'ai' as const, content: response }]);
+      const nextMessages = [...historyBefore, userMsg, { role: 'ai' as const, content: response }];
+      setChatMessages(nextMessages);
+      setSuggestedAuditLoading(true);
+      try {
+        const nextSuggestions = await generateAdaptiveAuditQA(selectedResult, activeChatFinding, nextMessages, lang);
+        setSuggestedAuditQA(nextSuggestions);
+      } catch (error) {
+        console.error(error);
+      } finally {
+        setSuggestedAuditLoading(false);
+      }
     } catch (e) {
       setChatMessages(prev => [...prev, { role: 'ai' as const, content: lang === 'ES' ? 'Error al procesar consulta.' : 'Query error.' }]);
     } finally {
@@ -383,12 +623,80 @@ export default function App() {
     }
   }
 
+  async function handleOpenSource(contract: Contract) {
+    setSourceContract(contract);
+    setSourcePreview(null);
+    setSourceError(null);
+    setSourceLoading(true);
+
+    try {
+      const params = new URLSearchParams();
+      if (contract.url_proceso) params.set('url', contract.url_proceso);
+      if (contract.referencia_proceso || contract.id_contrato) {
+        params.set('processId', contract.referencia_proceso || contract.id_contrato);
+      }
+
+      const response = await fetch(`/api/secop/source?${params.toString()}`);
+      if (!response.ok) {
+        throw new Error(lang === 'ES' ? 'No fue posible recuperar la fuente SECOP.' : 'The SECOP source could not be loaded.');
+      }
+
+      const payload = await response.json() as SourcePreview;
+      setSourcePreview(payload);
+    } catch (error) {
+      console.error(error);
+      setSourceError(lang === 'ES' ? 'No fue posible recuperar la fuente SECOP en este momento.' : 'The SECOP source could not be loaded right now.');
+    } finally {
+      setSourceLoading(false);
+    }
+  }
+
+  function closeSourcePreview() {
+    setSourceContract(null);
+    setSourcePreview(null);
+    setSourceError(null);
+    setSourceLoading(false);
+  }
+
   const handleTrain = async (entity: string) => {
     const { logs, memory } = await performAutonomousTraining(entity);
     setAgentLogs(prev => [...prev, ...logs].slice(-50));
     setNeuralMemory(memory);
-    setStatusMessage(lang === 'ES' ? `MEMORIA_SINCRONIZADA:${entity}` : `MEMORY_SYNCED:${entity}`);
+    setStatusMessage(lang === 'ES' ? `Aprendizaje actualizado con ${entity}` : `Learning updated with ${entity}`);
     return memory;
+  };
+
+  const handleSelfLearning = async () => {
+    const learnedRule = learnFromFindings(results);
+    if (!learnedRule) {
+      setStatusMessage(lang === 'ES' ? 'No se detectaron nuevos patrones recurrentes' : 'No new recurring patterns were detected');
+      return null;
+    }
+
+    setNeuralMemory(prev => {
+      const next = {
+        totalAudits: prev?.totalAudits || 0,
+        systemBiasAdjustment: Math.min((prev?.systemBiasAdjustment || 0) + 0.01, 1),
+        detectedPatterns: Array.from(new Set([...(prev?.detectedPatterns || []), ...(learnedRule.memoryPatterns || [learnedRule.name])])),
+      };
+      localStorage.setItem(NEURAL_MEMORY_KEY, JSON.stringify(next));
+      return next;
+    });
+
+    setAgentLogs(prev => [
+      ...prev,
+      {
+        agent: 'SYSTEM',
+        status: 'COMPLETED',
+        timestamp: new Date().toISOString(),
+        message: lang === 'ES'
+          ? `Nuevo patrón incorporado: ${learnedRule.name}`
+          : `New pattern incorporated: ${learnedRule.name}`,
+      }
+    ].slice(-50));
+
+    setStatusMessage(lang === 'ES' ? 'Nuevo patrón incorporado al sistema' : 'A new pattern was incorporated into the system');
+    return learnedRule;
   };
 
   const handleCopyReport = () => {
@@ -398,11 +706,9 @@ export default function App() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleDownloadPDF = async () => {
-    if (!aiReport || !selectedResult) return;
-    
+  const downloadElementAsPdf = async (elementId: string, fileName: string) => {
     setLoading(true);
-    setStatusMessage(lang === 'ES' ? 'GENERANDO DOCUMENTO PDF...' : 'GENERATING PDF DOCUMENT...');
+    setStatusMessage(lang === 'ES' ? 'Preparando documento PDF...' : 'Preparing PDF document...');
     
     try {
       const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
@@ -410,7 +716,7 @@ export default function App() {
         import('jspdf')
       ]);
 
-      const element = document.getElementById('report-paper');
+      const element = document.getElementById(elementId);
       if (!element) return;
 
       const canvas = await html2canvas(element, {
@@ -428,16 +734,26 @@ export default function App() {
       });
 
       pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
-      pdf.save(`AUDITORIA_FORENSE_${selectedResult.providerName.replace(/\s+/g, '_')}_${new Date().getTime()}.pdf`);
+      pdf.save(fileName);
     } catch (error) {
       console.error('PDF Generation Error:', error);
     } finally {
       setLoading(false);
-      setStatusMessage('SYSTEM_READY');
+      setStatusMessage(lang === 'ES' ? 'Documento listo' : 'Document ready');
     }
   };
 
+  const handleDownloadPDF = async () => {
+    if (!aiReport || !selectedResult) return;
+    await downloadElementAsPdf(
+      'report-paper',
+      `AUDITORIA_FORENSE_${selectedResult.providerName.replace(/\s+/g, '_')}_${new Date().getTime()}.pdf`
+    );
+  };
+
   const handleExportCSV = () => {
+    setShowFindingsOverview(true);
+    return;
 
     if (results.length === 0) return;
     const headers = ["Proveedor", "NIT", "Riesgo", "Valor Total", "Similitud %", "Contratos", "Ventana Días"];
@@ -459,6 +775,109 @@ export default function App() {
     link.click();
   };
 
+  const heroEntityRows = auditedEntities.slice(0, 6);
+  const monitoredEntities = auditedEntities.length > 0
+    ? auditedEntities.map(entity => entity.name).slice(0, 6)
+    : NOTORIOUS_ENTITIES.slice(0, 6);
+
+  const openSourceRegistry = [
+    {
+      icon: Globe,
+      title: isEs ? 'Cobertura nacional SECOP II' : 'National SECOP II coverage',
+      description: isEs
+        ? 'El motor se apoya en datos públicos de alta relevancia para mapear entidades, proveedores, modalidades, fechas, NIT y cuantías en tiempo casi real.'
+        : 'The engine relies on high-value public data to map entities, providers, procurement modes, dates, tax IDs, and amounts in near real time.',
+      tags: isEs
+        ? ['Entidad contratante', 'Proveedor', 'NIT', 'Fecha', 'Objeto contractual', 'Precio base']
+        : ['Contracting entity', 'Provider', 'Tax ID', 'Date', 'Contract object', 'Base amount'],
+    },
+    {
+      icon: BookOpen,
+      title: isEs ? 'Fundamento jurídico vivo' : 'Living legal foundation',
+      description: isEs
+        ? `Una capa jurídica indexada con ${LEGAL_KNOWLEDGE_BASE.length} referencias convierte cada alerta en una explicación defendible y útil para control fiscal.`
+        : `An indexed legal layer with ${LEGAL_KNOWLEDGE_BASE.length} references turns each alert into a defensible explanation for oversight work.`,
+      tags: isEs
+        ? ['Ley 80/1993', 'Decreto 1082/2015', 'Ley 1474/2011', 'Ley 2195/2022', 'CCE', 'OCDE']
+        : ['Law 80/1993', 'Decree 1082/2015', 'Law 1474/2011', 'Law 2195/2022', 'CCE', 'OECD'],
+    },
+    {
+      icon: Database,
+      title: isEs ? 'Memoria operativa persistente' : 'Persistent operating memory',
+      description: isEs
+        ? 'La persistencia de análisis y reportes acelera nuevas revisiones, conserva consistencia y prepara el camino para monitoreo continuo.'
+        : 'Persisted analyses and reports accelerate new reviews, preserve consistency, and prepare the path for continuous monitoring.',
+      tags: isEs
+        ? ['Cache de análisis', 'Cache de reportes', 'RAG persistente', 'PostgreSQL']
+        : ['Analysis cache', 'Report cache', 'Persistent RAG', 'PostgreSQL'],
+    },
+  ];
+
+  const systemFlow = [
+    {
+      icon: Database,
+      title: isEs ? '1. Ingesta abierta' : '1. Open ingestion',
+      text: isEs
+        ? 'El usuario busca una entidad y el sistema descarga contratos recientes o lotes priorizados desde SECOP II.'
+        : 'The user searches an entity and the system downloads recent contracts or prioritized batches from SECOP II.',
+    },
+    {
+      icon: Files,
+      title: isEs ? '2. Agrupación por proveedor' : '2. Grouping by provider',
+      text: isEs
+        ? 'Los procesos se consolidan por proveedor/NIT para observar fraccionamiento, repetición y concentración económica.'
+        : 'Processes are consolidated by provider/tax ID to expose split contracting, repetition, and economic concentration.',
+    },
+    {
+      icon: Cpu,
+      title: isEs ? '3. Inferencia semántica y estadística' : '3. Semantic and statistical inference',
+      text: isEs
+        ? 'Embeddings locales, reglas forenses y ventanas temporales convierten el lote en un puntaje de riesgo auditable.'
+        : 'Local embeddings, forensic rules, and temporal windows convert each batch into an auditable risk score.',
+    },
+    {
+      icon: Gavel,
+      title: isEs ? '4. Explicación jurídica y reporte' : '4. Legal explanation and report',
+      text: isEs
+        ? 'El hallazgo queda acompañado por contexto normativo, evidencia puntual y un informe narrado para el auditor.'
+        : 'Each finding is accompanied by regulatory context, pinpoint evidence, and a narrated report for the auditor.',
+    },
+  ];
+
+  const riskSignals = [
+    {
+      title: isEs ? 'Identidad semántica' : 'Semantic identity',
+      text: isEs
+        ? 'Detecta contratos con objetos casi iguales aunque estén redactados distinto.'
+        : 'Detects contracts with nearly identical purposes even when written differently.',
+    },
+    {
+      title: isEs ? 'Aglomeración temporal' : 'Temporal clustering',
+      text: isEs
+        ? 'Señala proveedores con múltiples firmas concentradas en días o semanas.'
+        : 'Flags providers with multiple signatures concentrated in days or weeks.',
+    },
+    {
+      title: isEs ? 'Bunching de cuantías' : 'Amount bunching',
+      text: isEs
+        ? 'Busca montos casi idénticos justo por debajo de umbrales competitivos.'
+        : 'Looks for nearly identical amounts just below competitive thresholds.',
+    },
+    {
+      title: isEs ? 'Modalidades no competitivas' : 'Non-competitive modes',
+      text: isEs
+        ? 'Mide abuso de contratación directa, mínima cuantía y otras modalidades de baja competencia.'
+        : 'Measures overuse of direct contracting, low-value procedures, and other low-competition modalities.',
+    },
+  ];
+
+  const systemFacts = [
+    isEs ? 'Arquitectura pensada para crecer desde pilotos hasta operación institucional.' : 'Architecture designed to grow from pilots into institutional operations.',
+    isEs ? 'Backend con integración a SECOP II, persistencia y contexto jurídico reutilizable.' : 'Backend with SECOP II integration, persistence, and reusable legal context.',
+    isEs ? 'IA local para scoring, explicación y generación de reportes con mayor control operativo.' : 'Local AI for scoring, explanations, and report generation with stronger operational control.',
+    isEs ? 'Salidas listas para priorización ejecutiva, trabajo de auditoría y presentación institucional.' : 'Outputs ready for executive prioritization, audit work, and institutional presentation.',
+  ];
+
   return (
     <div className="min-h-screen bg-[#F2F2F2] text-[#333333] font-sans flex flex-col antialiased">
       {/* Official Gov Header Rail */}
@@ -468,11 +887,11 @@ export default function App() {
             <div className="w-1 h-6 bg-[#FCD059]" />
             <div className="w-1 h-6 bg-[#004884]" />
             <div className="w-1 h-6 bg-[#D12C26]" />
-            <span className="text-[11px] font-black tracking-widest ml-2">BHA</span>
+            <span className="text-[11px] font-black tracking-widest ml-2">GOBIA</span>
           </div>
           <div className="h-4 w-px bg-white/20" />
           <h1 className="text-[10px] font-bold tracking-widest text-white/90 uppercase">
-            THEGU (El vigilante según la lengua Nassa) | GOB_IA PRO
+            GOBIA AUDITOR | ANALITICA DE CONTRATACION PUBLICA
           </h1>
         </div>
         <div className="flex items-center gap-6">
@@ -502,7 +921,8 @@ export default function App() {
 
           <div className="flex items-center gap-2">
             {[
-              { id: 'DASHBOARD', icon: Target, label: t.nav.intel }
+              { id: 'AUDIT', icon: Target, label: isEs ? 'PANEL DE AUDITORIA' : 'AUDIT PANEL' },
+              { id: 'SYSTEM', icon: BookOpen, label: isEs ? 'SISTEMA' : 'SYSTEM' }
             ].map(item => (
               <button
                 key={item.id}
@@ -542,42 +962,161 @@ export default function App() {
 
       {/* Search & Hero Context */}
       <div className="bg-white border-b border-[#E6E6E6] py-12">
-        <div className="max-w-6xl mx-auto px-8 flex flex-col md:flex-row items-center justify-between gap-12">
-          <div className="flex-1 space-y-4">
-            <h2 className="text-4xl font-black text-[#004884] tracking-tighter leading-tight uppercase">
-              {t.dashboard.title}
-            </h2>
-            <p className="text-lg text-gray-500 font-medium max-w-xl">
-              {t.dashboard.subtitle}
-            </p>
-          </div>
-          
-          <div className="w-full md:w-96 space-y-4">
-            <div className="relative group">
-              <input 
-                data-testid="search-input"
-                type="text"
-                value={entitySearch}
-                onChange={(e) => setEntitySearch(e.target.value.toUpperCase())}
-                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                placeholder={t.header.search_placeholder}
-                className="w-full h-14 bg-gray-50 border-2 border-[#E6E6E6] px-6 text-sm font-bold focus:border-[#004884] outline-none transition-all pr-14"
-              />
-              <button 
-                onClick={() => handleSearch()}
-                disabled={loading}
-                className="absolute right-2 top-2 w-10 h-10 bg-[#004884] text-white flex items-center justify-center hover:bg-[#003663] transition-colors"
-              >
-                {loading ? <Loader2 className="animate-spin" size={18} /> : <Search size={18} />}
-              </button>
-            </div>
-            <div className="flex justify-between items-center px-1">
-              <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest flex items-center gap-2">
-                <Globe size={10} /> FUENTE: SECOP II NACIONAL
+        <div className="max-w-6xl mx-auto px-8 space-y-10">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-12">
+            <div className="flex-1 space-y-4">
+              <h2 className="text-4xl font-black text-[#004884] tracking-tighter leading-tight uppercase">
+                {t.dashboard.title}
+              </h2>
+              <p className="text-lg text-gray-500 font-medium max-w-xl">
+                {t.dashboard.subtitle}
               </p>
-              {loading && (
-                <p className="text-[10px] text-emerald-600 font-bold tabular-nums animate-pulse">PROCESANDO RED NEURAL: {progress}%</p>
+              <div className="flex flex-wrap gap-3 pt-2">
+                <button onClick={() => { setActiveView('SYSTEM'); setSystemTab('OVERVIEW'); }} className="gov-button-outline flex items-center gap-2">
+                  <FileText size={14} /> {isEs ? 'Ver capa informativa' : 'Open information layer'}
+                </button>
+                <button onClick={() => { setActiveView('SYSTEM'); setSystemTab('KNOWLEDGE'); }} className="gov-button-outline flex items-center gap-2">
+                  <BookOpen size={14} /> {isEs ? 'Ver reglas y fundamentos' : 'Open rules and foundations'}
+                </button>
+              </div>
+            </div>
+            
+            <div className="w-full md:w-96 space-y-4">
+              <div className="relative group">
+                <input 
+                  data-testid="search-input"
+                  type="text"
+                  value={entitySearch}
+                  onChange={(e) => setEntitySearch(e.target.value.toUpperCase())}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                  placeholder={t.header.search_placeholder}
+                  className="w-full h-14 bg-gray-50 border-2 border-[#E6E6E6] px-6 text-sm font-bold focus:border-[#004884] outline-none transition-all pr-14"
+                />
+                <button 
+                  onClick={() => handleSearch()}
+                  disabled={loading}
+                  className="absolute right-2 top-2 w-10 h-10 bg-[#004884] text-white flex items-center justify-center hover:bg-[#003663] transition-colors"
+                >
+                  {loading ? <Loader2 className="animate-spin" size={18} /> : <Search size={18} />}
+                </button>
+              </div>
+              <div className="flex justify-between items-center px-1">
+                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest flex items-center gap-2">
+                  <Globe size={10} /> {isEs ? 'FUENTE ABIERTA: SECOP II / DATOS.GOV.CO' : 'OPEN SOURCE: SECOP II / DATOS.GOV.CO'}
+                </p>
+                {loading && (
+                  <p className="text-[10px] text-emerald-600 font-bold tabular-nums animate-pulse">
+                    {isEs ? `PROCESANDO ANALISIS: ${progress}%` : `PROCESSING ANALYSIS: ${progress}%`}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 xl:grid-cols-[1.2fr_1fr_1fr] gap-6">
+            <div className="gov-card p-6 border-l-4 border-l-[#004884] space-y-5">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="header-label !mb-0">{isEs ? 'Entidades bajo auditoría' : 'Entities under audit'}</p>
+                  <h3 className="text-2xl font-black text-[#333333] uppercase tracking-tight">
+                    {isEs ? 'Lo que el sistema está revisando ahora' : 'What the system is auditing now'}
+                  </h3>
+                </div>
+                <div className="px-3 py-2 bg-[#f0f7ff] text-[#004884] text-[10px] font-black uppercase tracking-widest border border-[#d9eaf9]">
+                  {auditCoverage.entityCount || monitoredEntities.length} {isEs ? 'entidades' : 'entities'}
+                </div>
+              </div>
+
+              {heroEntityRows.length > 0 ? (
+                <div className="space-y-3">
+                        {heroEntityRows.map(entity => (
+                          <div key={entity.name} className="flex items-center justify-between gap-4 border border-[#E6E6E6] bg-gray-50 px-4 py-3">
+                            <div className="min-w-0">
+                              <p className="text-sm font-black text-[#333333] uppercase truncate">{entity.name}</p>
+                              <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">
+                          {entity.providerCount} {isEs ? 'proveedores' : 'providers'} / {entity.contracts} {isEs ? 'contratos' : 'contracts'}
+                              </p>
+                              <p className="text-[10px] text-gray-400 uppercase tracking-widest">
+                                {isEs ? 'Última fecha' : 'Latest date'}: {entity.lastDate ? formatAuditDate(entity.lastDate, lang) : (isEs ? 'Sin fecha' : 'No date')}
+                              </p>
+                            </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-[10px] font-black text-[#004884] uppercase tracking-widest">{formatCompactCop(entity.exposure)}</p>
+                        <p className="text-[10px] font-bold text-gray-400 uppercase">
+                          {entity.redFindings} {isEs ? 'alertas rojas' : 'red alerts'}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-sm text-gray-500 leading-relaxed">
+                    {isEs
+                      ? 'La plataforma arranca priorizando entidades con historial de opacidad para poblar el tablero preventivo.'
+                      : 'The platform starts by prioritizing historically opaque entities to populate the preventive dashboard.'}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {monitoredEntities.map(entity => (
+                      <span key={entity} className="px-3 py-2 bg-gray-50 border border-[#E6E6E6] text-[10px] font-black uppercase tracking-widest text-[#333333]">
+                        {entity}
+                      </span>
+                    ))}
+                  </div>
+                </div>
               )}
+            </div>
+
+            <div className="gov-card p-6 border-l-4 border-l-[#FCD059] space-y-4">
+              <p className="header-label !mb-0">{isEs ? 'Base de confianza' : 'Trust foundation'}</p>
+              <h3 className="text-2xl font-black text-[#333333] uppercase tracking-tight">
+                {isEs ? 'Respaldo que sostiene la plataforma' : 'What underpins the platform'}
+              </h3>
+              <div className="space-y-4">
+                {openSourceRegistry.map(source => (
+                  <div key={source.title} className="border border-[#E6E6E6] p-4 bg-white space-y-3">
+                    <div className="flex items-center gap-3">
+                      <source.icon size={16} className="text-[#004884]" />
+                      <p className="text-sm font-black text-[#333333] uppercase">{source.title}</p>
+                    </div>
+                    <p className="text-sm text-gray-500 leading-relaxed">{source.description}</p>
+                    <div className="flex flex-wrap gap-2">
+                      {source.tags.map(tag => (
+                        <span key={tag} className="px-2 py-1 bg-gray-50 border border-gray-100 text-[9px] font-bold uppercase tracking-wider text-gray-500">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="gov-card p-6 border-l-4 border-l-[#D12C26] space-y-5">
+              <p className="header-label !mb-0">{isEs ? 'Tesis de valor' : 'Value thesis'}</p>
+              <h3 className="text-2xl font-black text-[#333333] uppercase tracking-tight">
+                {isEs ? 'Por qué esta propuesta escala' : 'Why this proposal scales'}
+              </h3>
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { label: isEs ? 'Contratos auditados' : 'Contracts audited', value: auditCoverage.totalContracts },
+                  { label: isEs ? 'Proveedores en hallazgos' : 'Providers in findings', value: auditCoverage.providerCount },
+                  { label: isEs ? 'Entidades cubiertas' : 'Entities covered', value: auditCoverage.entityCount || monitoredEntities.length },
+                  { label: isEs ? 'Departamentos' : 'Departments', value: auditCoverage.departmentCount || '--' },
+                ].map(metric => (
+                  <div key={metric.label} className="border border-[#E6E6E6] bg-gray-50 p-4">
+                    <p className="header-label !text-gray-400">{metric.label}</p>
+                    <p className="text-2xl font-black text-[#004884]">{metric.value}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="space-y-2">
+                {systemFacts.map(fact => (
+                  <p key={fact} className="text-sm text-gray-600 leading-relaxed">
+                    <span className="font-black text-[#004884]">-</span> {fact}
+                  </p>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -587,7 +1126,7 @@ export default function App() {
       <main className="flex-1 overflow-y-auto custom-scrollbar p-8 lg:p-12">
         <div className="max-w-6xl mx-auto">
           <AnimatePresence mode="wait">
-            {activeView === 'DASHBOARD' && (
+            {activeView === 'AUDIT' && (
               <motion.section 
                 key="dashboard"
                 initial={{ opacity: 0, scale: 0.995 }}
@@ -645,15 +1184,6 @@ export default function App() {
                     <div className="flex items-center gap-4">
                       {results.length > 0 && (
                         <>
-                          <button 
-                            onClick={() => {
-                              localStorage.removeItem('GOB_IA_CACHE_V1');
-                              window.location.reload();
-                            }}
-                            className="text-[11px] font-bold text-gray-400 hover:text-red-600 flex items-center gap-2 transition-colors uppercase"
-                          >
-                            <Trash2 size={12} /> {lang === 'ES' ? 'Limpiar Todo' : 'Clear All'}
-                          </button>
                           <button onClick={handleExportCSV} className="gov-button flex items-center gap-2">
                             <Download size={14} /> {t.dashboard.export}
                           </button>
@@ -670,18 +1200,19 @@ export default function App() {
                   ) : filteredResults.length > 0 ? (
                     <div className="space-y-4">
                       {filteredResults.map((r) => (
-                        <div 
+                        <button 
+                          type="button"
                           data-testid="result-card"
                           key={r.groupKey} 
                           onClick={() => handleGenerateReport(r)}
-                          className="gov-card p-6 flex flex-col md:flex-row md:items-center justify-between gap-8 border-l-8 cursor-pointer relative"
+                          className="gov-card w-full p-6 flex flex-col md:flex-row md:items-center justify-between gap-8 border-l-8 cursor-pointer relative text-left"
                           style={{ borderLeftColor: r.risk === 'Red' ? '#D12C26' : r.risk === 'Orange' ? '#FCD059' : '#004884' }}
                         >
                             <div className="flex-1 space-y-2">
                               <div className="flex items-center gap-4">
                                 <h4 className="text-xl font-black text-[#333333] uppercase leading-none">{r.providerName}</h4>
                                 {r.risk === 'Red' && (
-                                  <span className="text-[9px] font-black bg-red-600 text-white px-2 py-1 uppercase animate-pulse">
+                                  <span className="text-[9px] font-black bg-red-600 text-white px-2 py-1 uppercase">
                                     ALERTA CRÍTICA
                                   </span>
                                 )}
@@ -689,6 +1220,20 @@ export default function App() {
                               <div className="flex items-center gap-4 text-gray-400 font-mono text-[10px] uppercase">
                                  <p className="flex items-center gap-1 text-[#004884] font-bold"><Fingerprint size={10} /> {r.redFlags[0] || 'Patrón Nominal'}</p>
                                  <p className="flex items-center gap-1"><Database size={10} /> NIT: {r.groupKey.split('-')[1]}</p>
+                              </div>
+                              <p className="text-[11px] font-bold text-gray-500 uppercase tracking-widest">
+                                {isEs ? 'Entidades auditadas' : 'Audited entities'}: {summarizeList(uniqueEntityNames(r.contracts), 2)}
+                              </p>
+                              <div className="flex flex-wrap gap-2 pt-1">
+                                <span className="px-2 py-1 bg-gray-50 border border-gray-100 text-[10px] font-bold uppercase text-gray-500">
+                                  {isEs ? 'Cobertura' : 'Coverage'}: {uniqueDepartmentNames(r.contracts).length > 0 ? summarizeList(uniqueDepartmentNames(r.contracts), 2) : (isEs ? 'Nacional' : 'National')}
+                                </span>
+                                <span className="px-2 py-1 bg-gray-50 border border-gray-100 text-[10px] font-bold uppercase text-gray-500">
+                                  {isEs ? 'Ventana temporal' : 'Time window'}: {r.maxDayDiff} {isEs ? 'días' : 'days'}
+                                </span>
+                                <span className="px-2 py-1 bg-gray-50 border border-gray-100 text-[10px] font-bold uppercase text-gray-500">
+                                  {isEs ? 'Carga' : 'Load'}: {r.loadType || 'REFERENCE'}
+                                </span>
                               </div>
                             </div>
 
@@ -714,7 +1259,7 @@ export default function App() {
                                   <ChevronRight size={20} className="text-gray-300" />
                                 </div>
                              </div>
-                        </div>
+                        </button>
                       ))}
                     </div>
                   ) : (
@@ -730,46 +1275,121 @@ export default function App() {
               </motion.section>
             )}
 
-            {activeView === 'ABOUT' && (
+            {activeView === 'SYSTEM' && systemTab !== 'KNOWLEDGE' && (
               <motion.section 
-                key="about"
+                key="system"
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0 }}
-                className="max-w-4xl mx-auto w-full pb-40"
+                className="max-w-6xl mx-auto w-full pb-40"
               >
                 <div className="mb-16 border-b-4 border-[#FCD059] pb-8 space-y-4">
-                  <p className="header-label">DOCUMENTACIÓN TÉCNICA OFICIAL</p>
-                  <h2 className="text-5xl font-black text-[#004884] uppercase tracking-tighter leading-none">{t.about.title}</h2>
+                  <p className="header-label">{isEs ? 'DOSSIER TÉCNICO Y NARRATIVO' : 'TECHNICAL AND NARRATIVE DOSSIER'}</p>
+                  <h2 className="text-5xl font-black text-[#004884] uppercase tracking-tighter leading-none">
+                    {isEs ? 'Lo que el jurado y el público deben entender del sistema' : 'What the jury and the public should understand about the system'}
+                  </h2>
+                  <p className="text-lg text-gray-500 max-w-4xl">
+                    {isEs
+                      ? 'Esta vista resume el problema, las fuentes abiertas, las reglas de inferencia, la arquitectura real y el tipo de evidencia que GobIA Auditor entrega. La idea es que nadie tenga que adivinar cómo funciona.'
+                      : 'This view summarizes the problem, the open sources, the inference rules, the real architecture, and the kind of evidence GobIA Auditor produces. Nobody should have to guess how it works.'}
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap gap-3 mb-12">
+                  {[
+                    { id: 'OVERVIEW', label: isEs ? 'Resumen' : 'Overview' },
+                    { id: 'SOURCES', label: isEs ? 'Fuentes' : 'Sources' },
+                    { id: 'FLOW', label: isEs ? 'Operacion' : 'Flow' },
+                    { id: 'KNOWLEDGE', label: isEs ? 'Capacidades' : 'Capabilities' },
+                  ].map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setSystemTab(tab.id as typeof systemTab)}
+                      className={cn(
+                        'px-5 py-3 text-[11px] font-black uppercase tracking-[0.2em] border transition-all',
+                        systemTab === tab.id ? 'bg-[#004884] text-white border-[#004884]' : 'bg-white text-gray-500 border-[#E6E6E6] hover:border-[#004884]'
+                      )}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
                 </div>
 
                 <div className="space-y-24">
-                  {/* Mission */}
                   <div className="space-y-8 bg-white border border-[#E6E6E6] p-12 relative overflow-hidden">
                     <div className="absolute top-0 left-0 w-2 h-full bg-[#004884]" />
                     <h3 className="text-2xl font-black text-[#004884] uppercase flex items-center gap-4">
-                      <Target className="text-[#004884]" size={24} /> {t.about.mission}
+                      <Target className="text-[#004884]" size={24} /> {isEs ? 'Qué resuelve' : 'What it solves'}
                     </h3>
-                    <p className="text-xl text-[#333333] leading-relaxed font-medium italic">"{t.about.mission_text}"</p>
+                    <p className="text-xl text-[#333333] leading-relaxed font-medium italic">
+                      "{isEs
+                        ? 'GobIA Auditor convierte contratos públicos dispersos en expedientes de riesgo explicables. No busca un documento aislado: detecta patrones repetidos que apuntan a fraccionamiento, concentración y baja competencia.'
+                        : 'GobIA Auditor turns scattered public contracts into explainable risk case files. It does not search for an isolated document: it detects repeated patterns that point to contract splitting, concentration, and weak competition.'}"
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {[
+                        {
+                          label: isEs ? 'Entidades visibles ahora' : 'Entities visible now',
+                          value: auditCoverage.entityCount || monitoredEntities.length,
+                        },
+                        {
+                          label: isEs ? 'Contratos analizados' : 'Contracts analyzed',
+                          value: auditCoverage.totalContracts,
+                        },
+                        {
+                          label: isEs ? 'Fuentes jurídicas indexadas' : 'Indexed legal sources',
+                          value: LEGAL_KNOWLEDGE_BASE.length,
+                        },
+                      ].map(item => (
+                        <div key={item.label} className="bg-gray-50 border border-gray-100 p-5">
+                          <p className="header-label !text-gray-400">{item.label}</p>
+                          <p className="text-3xl font-black text-[#004884]">{item.value}</p>
+                        </div>
+                      ))}
+                    </div>
                   </div>
 
-                  {/* How it works */}
                   <div className="space-y-12">
                     <h3 className="text-2xl font-black text-[#004884] uppercase flex items-center gap-4">
-                      <Cpu className="text-[#004884]" size={24} /> {t.about.how_it_works}
+                      <Globe className="text-[#004884]" size={24} /> {isEs ? 'Fuentes abiertas y evidencia de entrada' : 'Open sources and input evidence'}
+                    </h3>
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                      {openSourceRegistry.map(item => (
+                        <div key={item.title} className="bg-white border border-[#E6E6E6] p-8 space-y-5">
+                          <div className="w-14 h-14 bg-gray-50 flex items-center justify-center border-4 border-gray-100">
+                            <item.icon size={24} className="text-[#004884]" />
+                          </div>
+                          <div className="space-y-3">
+                            <h4 className="text-xl font-black text-[#333333] uppercase tracking-tight">{item.title}</h4>
+                            <p className="text-base text-gray-500 leading-relaxed">{item.description}</p>
+                            <div className="flex flex-wrap gap-2">
+                              {item.tags.map(tag => (
+                                <span key={tag} className="px-2 py-1 bg-gray-50 border border-gray-100 text-[9px] font-bold uppercase tracking-wider text-gray-500">
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-12">
+                    <h3 className="text-2xl font-black text-[#004884] uppercase flex items-center gap-4">
+                      <Cpu className="text-[#004884]" size={24} /> {isEs ? 'Cómo opera realmente el sistema' : 'How the system actually operates'}
                     </h3>
                     <div className="grid gap-6">
-                      {[
-                        { step: '01', title: t.about.step_1, text: t.about.step_1_text, icon: Database },
-                        { step: '02', title: t.about.step_2, text: t.about.step_2_text, icon: Zap },
-                        { step: '03', title: t.about.step_3, text: t.about.step_3_text, icon: ShieldAlert },
-                      ].map(item => (
-                        <div key={item.step} className="bg-white border border-[#E6E6E6] p-10 flex flex-col md:flex-row gap-8 items-start hover:border-[#004884] transition-all group">
+                      {systemFlow.map((item, index) => (
+                        <div key={item.title} className="bg-white border border-[#E6E6E6] p-10 flex flex-col md:flex-row gap-8 items-start hover:border-[#004884] transition-all group">
                           <div className="w-16 h-16 bg-gray-50 flex items-center justify-center border-4 border-gray-100 group-hover:border-[#004884]/10 transition-all shrink-0">
                             <item.icon size={28} className="text-gray-300 group-hover:text-[#004884] transition-colors" />
                           </div>
                           <div className="space-y-2">
-                            <p className="text-[10px] font-black text-[#004884]/40 uppercase tracking-widest">Procedimiento Nacional {item.step}</p>
+                            <p className="text-[10px] font-black text-[#004884]/40 uppercase tracking-widest">
+                              {isEs ? `Flujo operativo ${String(index + 1).padStart(2, '0')}` : `Operational flow ${String(index + 1).padStart(2, '0')}`}
+                            </p>
                             <h4 className="text-xl font-black text-[#333333] uppercase tracking-tight">{item.title}</h4>
                             <p className="text-base text-gray-500 leading-relaxed">{item.text}</p>
                           </div>
@@ -778,37 +1398,74 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Juror Note */}
-                  <div className="space-y-8 bg-[#004884] p-12 text-white">
-                    <h3 className="text-2xl font-black uppercase flex items-center gap-4">
-                      <Gavel className="text-[#FCD059]" size={24} /> {t.about.juror_note}
-                    </h3>
-                    <p className="text-lg text-white/90 leading-relaxed font-medium">{t.about.juror_text}</p>
-                  </div>
-
-                  {/* Manual */}
                   <div className="space-y-12">
                     <h3 className="text-2xl font-black text-[#004884] uppercase flex items-center gap-4">
-                      <BookOpen className="text-[#004884]" size={24} /> {t.about.manual}
+                      <ShieldAlert className="text-[#004884]" size={24} /> {isEs ? 'Señales que activan el riesgo' : 'Signals that activate risk'}
                     </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                       {[
-                        { step: 1, text: t.about.instruction_search },
-                        { step: 2, text: t.about.instruction_risk },
-                        { step: 3, text: t.about.instruction_cache },
-                       ].map(i => (
-                        <div key={i.step} className="p-8 bg-gray-50 border border-gray-100 space-y-6">
-                          <div className="w-10 h-10 bg-[#004884] text-white flex items-center justify-center font-black text-xl">{i.step}</div>
-                          <p className="text-sm font-bold text-[#333333] uppercase leading-relaxed">{i.text}</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+                      {riskSignals.map(signal => (
+                        <div key={signal.title} className="p-8 bg-gray-50 border border-gray-100 space-y-4">
+                          <p className="header-label !mb-0">{isEs ? 'Indicador forense' : 'Forensic indicator'}</p>
+                          <h4 className="text-lg font-black text-[#333333] uppercase leading-tight">{signal.title}</h4>
+                          <p className="text-sm text-gray-500 leading-relaxed">{signal.text}</p>
                         </div>
-                       ))}
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+                    <div className="space-y-8 bg-[#004884] p-12 text-white">
+                      <h3 className="text-2xl font-black uppercase flex items-center gap-4">
+                        <Gavel className="text-[#FCD059]" size={24} /> {isEs ? 'Por qué esto importa para el jurado' : 'Why this matters to the jury'}
+                      </h3>
+                      <p className="text-lg text-white/90 leading-relaxed font-medium">
+                        {isEs
+                          ? 'La propuesta no se limita a visualizar contratos: transforma datos abiertos en una hipótesis de riesgo explicable, trazable y exportable. Eso reduce semanas de lectura manual a minutos de revisión asistida.'
+                          : 'The proposal does more than visualize contracts: it turns open data into an explainable, traceable, exportable risk hypothesis. That reduces weeks of manual reading to minutes of assisted review.'}
+                      </p>
+                      <div className="space-y-3">
+                        {[
+                          isEs ? 'Hace visible qué entidades están siendo auditadas y por qué.' : 'Makes visible which entities are being audited and why.',
+                          isEs ? 'Muestra las fuentes abiertas consultadas sin ocultarlas tras lenguaje de IA.' : 'Shows the open sources consulted instead of hiding them behind AI jargon.',
+                          isEs ? 'Entrega evidencia utilizable para contralorías, periodistas y vigilancia ciudadana.' : 'Produces usable evidence for oversight bodies, journalists, and civic watchdogs.',
+                        ].map(point => (
+                          <p key={point} className="text-sm text-white/90 leading-relaxed">
+                            <span className="font-black text-[#FCD059]">-</span> {point}
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="space-y-8 bg-white border border-[#E6E6E6] p-12">
+                      <h3 className="text-2xl font-black text-[#004884] uppercase flex items-center gap-4">
+                        <Monitor className="text-[#004884]" size={24} /> {isEs ? 'Arquitectura y salidas del sistema' : 'Architecture and system outputs'}
+                      </h3>
+                      <div className="space-y-3">
+                        {systemFacts.map(fact => (
+                          <p key={fact} className="text-sm text-gray-600 leading-relaxed">
+                            <span className="font-black text-[#004884]">-</span> {fact}
+                          </p>
+                        ))}
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                        {[
+                          isEs ? 'Tarjetas de hallazgo por proveedor y entidad.' : 'Finding cards by provider and entity.',
+                          isEs ? 'Expediente técnico con contrato expandible y evidencia puntual.' : 'Technical case file with expandable contracts and pinpoint evidence.',
+                          isEs ? 'Chat de auditor para explicar el fundamento jurídico del hallazgo.' : 'Audit chat to explain the legal basis of each finding.',
+                          isEs ? 'Exportación CSV y PDF para trabajo de campo o presentación institucional.' : 'CSV and PDF export for field work or institutional presentation.',
+                        ].map(output => (
+                          <div key={output} className="bg-gray-50 border border-gray-100 p-4 text-sm font-bold text-[#333333] uppercase leading-relaxed">
+                            {output}
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 </div>
               </motion.section>
             )}
 
-            {activeView === 'KNOWLEDGE' && (
+            {activeView === 'SYSTEM' && systemTab === 'KNOWLEDGE' && (
               <motion.section 
                 key="knowledge"
                 initial={{ opacity: 0 }}
@@ -819,6 +1476,7 @@ export default function App() {
                 <KnowledgeBase 
                   results={results} 
                   onRetroactiveAudit={() => handleRetroactiveAudit()}
+                  onSelfLearning={handleSelfLearning}
                   lang={lang}
                 />
               </motion.section>
@@ -854,7 +1512,7 @@ export default function App() {
                     </div>
                   </div>
                 </div>
-                <button onClick={() => { setSelectedResult(null); setAiReport(null); }} className="hover:bg-[#004884] hover:text-white transition-all p-2 rounded-full text-gray-300">
+                <button onClick={() => { setSelectedResult(null); setAiReport(null); setShowEvidenceDossier(false); setFocusedEvidenceId(null); setActiveChatFinding(null); setChatMessages([]); setSuggestedAuditQA([]); }} className="hover:bg-[#004884] hover:text-white transition-all p-2 rounded-full text-gray-300">
                   <X size={24} />
                 </button>
               </div>
@@ -888,9 +1546,10 @@ export default function App() {
                    <TechnicalFindings 
                      result={selectedResult}
                      lang={lang}
+                     onOpenSource={handleOpenSource}
                      expandedContract={expandedContract}
                      setExpandedContract={setExpandedContract}
-                     onAskAuditor={(finding) => { setActiveChatFinding(finding); setChatMessages([]); }}
+                     onAskAuditor={(finding) => { openInteractiveAudit(finding); }}
                    />
                 </div>
 
@@ -970,7 +1629,7 @@ export default function App() {
                          <div className="mt-20 pt-16 border-t border-gray-100 grid grid-cols-2 gap-20">
                             <div className="text-center">
                                <div className="h-px bg-gray-400 mb-4 mx-auto w-40" />
-                               <p className="text-[10px] font-black uppercase text-gray-400">Agente de Auditoría Neural</p>
+                               <p className="text-[10px] font-black uppercase text-gray-400">Sistema de auditoría</p>
                                <p className="text-[8px] text-gray-300">ID: CORTEX-G-3-v1</p>
                             </div>
                             <div className="text-center">
@@ -995,7 +1654,7 @@ export default function App() {
 
                 <div className="py-20 text-center border-t border-gray-50">
                     <p className="text-[10px] font-mono text-gray-300 uppercase tracking-widest italic">
-                      Fin del Expediente Técnico - Protocolo de Seguridad BHA-2026-X
+                      {lang === 'ES' ? 'Fin del expediente técnico' : 'End of technical case file'}
                     </p>
                 </div>
               </div>
@@ -1019,7 +1678,7 @@ export default function App() {
                           <Zap size={18} className="text-[#FCD059]" />
                           <span className="text-[11px] font-black tracking-widest uppercase truncate max-w-[300px]">AUDITORÍA INTERACTIVA // ID: {activeChatFinding.contractId}</span>
                         </div>
-                        <button onClick={() => { setActiveChatFinding(null); setChatMessages([]); }} className="hover:rotate-90 transition-transform p-1">
+                        <button onClick={() => { setActiveChatFinding(null); setChatMessages([]); setSuggestedAuditQA([]); }} className="hover:rotate-90 transition-transform p-1">
                           <X size={20} />
                         </button>
                       </div>
@@ -1030,6 +1689,42 @@ export default function App() {
                             ? 'El auditor tiene el contexto completo de este contrato y el historial del proveedor. Pregunta sobre legalidad, riesgos técnicos o comparativa semántica.' 
                             : 'The auditor has full context of this contract and provider history. Ask about legality, technical risks, or semantic comparison.'}
                         </div>
+
+                        {suggestedAuditLoading ? (
+                          <div className="bg-white border border-gray-200 p-4 space-y-3">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-[#004884]">
+                              {chatMessages.length > 0
+                                ? (lang === 'ES' ? 'Recalculando siguientes preguntas...' : 'Recalculating next questions...')
+                                : (lang === 'ES' ? 'Preparando preguntas sugeridas...' : 'Preparing suggested questions...')}
+                            </p>
+                            <div className="flex gap-1">
+                              <span className="w-2 h-2 bg-[#004884] rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                              <span className="w-2 h-2 bg-[#004884] rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                              <span className="w-2 h-2 bg-[#004884] rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                            </div>
+                          </div>
+                        ) : suggestedAuditQA.length > 0 ? (
+                          <div className="bg-white border border-gray-200 p-4 space-y-4">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-[#004884]">
+                              {chatMessages.length > 0
+                                ? (lang === 'ES' ? 'Siguientes preguntas sugeridas' : 'Suggested next questions')
+                                : (lang === 'ES' ? 'Preguntas sugeridas' : 'Suggested questions')}
+                            </p>
+                            <div className="grid gap-3">
+                              {suggestedAuditQA.map(item => (
+                                <button
+                                  key={item.question}
+                                  type="button"
+                                  onClick={() => applySuggestedAuditQA(item)}
+                                  className="text-left border border-gray-200 bg-gray-50 hover:bg-white hover:border-[#004884] transition-all p-4 space-y-2"
+                                >
+                                  <p className="text-[11px] font-black text-[#333333]">{item.question}</p>
+                                  <p className="text-[10px] text-gray-500 leading-relaxed line-clamp-2">{item.answer}</p>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
                         
                         {chatMessages.map((msg, idx) => (
                           <div key={idx} className={cn("flex w-full", msg.role === 'user' ? "justify-end" : "justify-start")}>
@@ -1088,16 +1783,459 @@ export default function App() {
                 )}
               </AnimatePresence>
 
+              <AnimatePresence>
+                {showEvidenceDossier && selectedResult && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+                  >
+                    <motion.div
+                      initial={{ scale: 0.96, y: 16 }}
+                      animate={{ scale: 1, y: 0 }}
+                      exit={{ scale: 0.96, y: 16 }}
+                      className="bg-white w-full max-w-6xl h-[82vh] border-4 border-[#004884] shadow-2xl flex overflow-hidden"
+                    >
+                      <div className="w-[360px] border-r border-[#E6E6E6] bg-gray-50 p-6 space-y-4 overflow-y-auto custom-scrollbar shrink-0">
+                        <div className="space-y-2">
+                          <p className="header-label !mb-0">{lang === 'ES' ? 'Dossier probatorio' : 'Evidence dossier'}</p>
+                          <h4 className="text-2xl font-black text-[#004884] uppercase tracking-tight">
+                            {lang === 'ES' ? 'Contratos observados' : 'Observed contracts'}
+                          </h4>
+                        </div>
+                        {selectedResult.detailedFindings
+                          .filter(finding => finding.reasons.length > 0 || selectedResult.riskScore > 80)
+                          .sort((a, b) => b.reasons.length - a.reasons.length)
+                          .map(finding => (
+                            <button
+                              key={finding.contractId}
+                              type="button"
+                              onClick={() => setFocusedEvidenceId(finding.contractId)}
+                              className={cn(
+                                "w-full text-left border p-4 space-y-2 transition-all",
+                                focusedEvidenceId === finding.contractId ? "border-[#004884] bg-white shadow-sm" : "border-[#E6E6E6] bg-gray-50 hover:bg-white"
+                              )}
+                            >
+                              <p className="text-[10px] font-black uppercase tracking-widest text-[#004884]">#{finding.contractId}</p>
+                              <p className="text-sm font-black text-[#333333] line-clamp-2">
+                                {finding.contract.objeto_del_contrato}
+                              </p>
+                              <p className="text-[10px] text-gray-500 uppercase">
+                                {finding.reasons[0] || (lang === 'ES' ? 'Revisión prioritaria' : 'Priority review')}
+                              </p>
+                            </button>
+                          ))}
+                      </div>
+
+                      <div className="flex-1 overflow-y-auto custom-scrollbar p-8 bg-white">
+                        {(() => {
+                          const findings = selectedResult.detailedFindings
+                            .filter(finding => finding.reasons.length > 0 || selectedResult.riskScore > 80)
+                            .sort((a, b) => b.reasons.length - a.reasons.length);
+                          const current = findings.find(finding => finding.contractId === focusedEvidenceId) || findings[0];
+                          if (!current) return null;
+                          const contract = current.contract;
+
+                          return (
+                            <div className="space-y-8">
+                              <div className="flex items-start justify-between gap-6">
+                                <div className="space-y-3">
+                                  <p className="header-label !mb-0">{lang === 'ES' ? 'Contrato seleccionado' : 'Selected contract'}</p>
+                                  <h4 className="text-3xl font-black text-[#333333] uppercase tracking-tight">
+                                    {contract.nombre_entidad}
+                                  </h4>
+                                  <p className="text-sm text-gray-500 max-w-3xl leading-relaxed">{contract.objeto_del_contrato}</p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowEvidenceDossier(false)}
+                                  className="w-10 h-10 flex items-center justify-center text-gray-400 hover:bg-[#004884] hover:text-white transition-all"
+                                >
+                                  <X size={20} />
+                                </button>
+                              </div>
+
+                              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                                {[
+                                  { label: lang === 'ES' ? 'Contrato' : 'Contract', value: current.contractId },
+                                  { label: lang === 'ES' ? 'Modalidad' : 'Modality', value: contract.modalidad_de_contratacion },
+                                  { label: lang === 'ES' ? 'Fecha' : 'Date', value: new Date(contract.fecha_de_firma).toLocaleDateString(lang === 'ES' ? 'es-CO' : 'en-CA') },
+                                  { label: lang === 'ES' ? 'Valor' : 'Amount', value: `$${parseContractValue(contract.valor_del_contrato).toLocaleString(lang === 'ES' ? 'es-CO' : 'en-US')}` },
+                                ].map(item => (
+                                  <div key={item.label} className="bg-gray-50 border border-[#E6E6E6] p-4">
+                                    <p className="header-label !text-gray-400">{item.label}</p>
+                                    <p className="text-sm font-black text-[#333333] uppercase">{item.value}</p>
+                                  </div>
+                                ))}
+                              </div>
+
+                              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                                <div className="border border-red-100 bg-red-50 p-6 space-y-4">
+                                  <p className="header-label !text-red-600">{lang === 'ES' ? 'Infracción exacta observada' : 'Exact observed infraction'}</p>
+                                  <div className="space-y-3">
+                                    {current.reasons.map(reason => (
+                                      <div key={reason} className="bg-white border border-red-100 p-4 space-y-2">
+                                        <p className="text-[11px] font-black text-red-700 uppercase">{reason}</p>
+                                        <p className="text-sm text-gray-600 leading-relaxed">{getReasonNarrative(reason, lang === 'ES')}</p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+
+                                <div className="border border-[#E6E6E6] bg-white p-6 space-y-4">
+                                  <p className="header-label">{lang === 'ES' ? 'Soporte puntual del hallazgo' : 'Pinpoint evidence'}</p>
+                                  <div className="bg-gray-50 border border-gray-100 p-4 text-sm text-gray-600 leading-relaxed">
+                                    {current.evidence}
+                                  </div>
+                                  <div className="space-y-2 text-sm text-gray-600">
+                                    <p><span className="font-black text-[#004884]">{lang === 'ES' ? 'Proveedor' : 'Provider'}:</span> {selectedResult.providerName}</p>
+                                    <p><span className="font-black text-[#004884]">{lang === 'ES' ? 'Entidad' : 'Entity'}:</span> {contract.nombre_entidad}</p>
+                                    <p><span className="font-black text-[#004884]">{lang === 'ES' ? 'Contexto del clúster' : 'Cluster context'}:</span> {selectedResult.redFlags[0] || (lang === 'ES' ? 'Hallazgo en revisión' : 'Finding under review')}</p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenSource(contract)}
+                                    className="gov-button-outline w-full flex items-center justify-center gap-2"
+                                  >
+                                    <ExternalLink size={14} /> {lang === 'ES' ? 'Abrir fuente SECOP' : 'Open SECOP source'}
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </motion.div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               <div className="p-8 border-t-2 border-[#F2F2F2] bg-white flex gap-6 mt-auto shrink-0">
-                <button onClick={handleExportCSV} className="gov-button flex-1 h-14 flex items-center justify-center gap-3">
-                  <Download size={18} /> {lang === 'ES' ? 'DESCARGAR DOSSIER PROBATORIO' : 'DOWNLOAD EVIDENCE DOSSIER'}
+                <button
+                  onClick={() => {
+                    const firstFinding = selectedResult.detailedFindings
+                      .filter(finding => finding.reasons.length > 0 || selectedResult.riskScore > 80)
+                      .sort((a, b) => b.reasons.length - a.reasons.length)[0];
+                    setFocusedEvidenceId(firstFinding?.contractId || null);
+                    setShowEvidenceDossier(true);
+                  }}
+                  className="gov-button flex-1 h-14 flex items-center justify-center gap-3"
+                >
+                  <FileText size={18} /> {lang === 'ES' ? 'VER DOSSIER PROBATORIO' : 'OPEN EVIDENCE DOSSIER'}
                 </button>
                 <button 
-                  onClick={() => window.open('https://www.contraloria.gov.co/denuncias', '_blank')}
+                  onClick={() => setShowEscalationGuide(true)}
                   className="gov-button-outline flex-1 h-14 flex items-center justify-center gap-3"
                 >
                   <ExternalLink size={18} /> {lang === 'ES' ? 'NOTIFICAR A LA CONTRALORÍA' : 'REPORT TO CONTRALORÍA'}
                 </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showFindingsOverview && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[119] flex items-center justify-center p-4 bg-black/55 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ scale: 0.97, y: 18 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.97, y: 18 }}
+              className="bg-white w-full max-w-6xl h-[88vh] border-4 border-[#004884] shadow-2xl overflow-hidden flex flex-col"
+            >
+              <div className="p-6 border-b border-[#E6E6E6] flex items-start justify-between gap-6">
+                <div className="space-y-2">
+                  <p className="header-label !mb-0">{lang === 'ES' ? 'Reporte de hallazgos' : 'Findings report'}</p>
+                  <h4 className="text-3xl font-black text-[#004884] uppercase tracking-tight">
+                    {lang === 'ES' ? 'Panorama ejecutivo de riesgos detectados' : 'Executive view of detected risks'}
+                  </h4>
+                  <p className="text-sm text-gray-500 max-w-3xl">
+                    {lang === 'ES'
+                      ? 'Este reporte resume lo que el sistema encontró, cómo leerlo y qué expedientes merecen atención prioritaria. La descarga en PDF queda como una acción secundaria.'
+                      : 'This report summarizes what the system found, how to read it, and which cases deserve priority review. PDF download remains a secondary action.'}
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => downloadElementAsPdf('findings-overview-paper', `REPORTE_HALLAZGOS_GOBIA_${new Date().getTime()}.pdf`)}
+                    className="gov-button flex items-center gap-2"
+                  >
+                    <Download size={14} /> {lang === 'ES' ? 'Descargar PDF oficial' : 'Download official PDF'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowFindingsOverview(false)}
+                    className="w-10 h-10 flex items-center justify-center text-gray-400 hover:bg-[#004884] hover:text-white transition-all"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto custom-scrollbar p-8 bg-gray-50">
+                <div
+                  id="findings-overview-paper"
+                  className="bg-white border border-gray-100 shadow-lg mx-auto w-full max-w-[210mm] min-h-[297mm] p-14 space-y-10"
+                >
+                  <div className="flex items-start justify-between gap-8 border-b-4 border-[#FCD059] pb-8">
+                    <div className="space-y-3">
+                      <p className="text-[11px] font-black uppercase tracking-[0.25em] text-[#004884]">
+                        {lang === 'ES' ? 'GobIA Auditor | Reporte ejecutivo' : 'GobIA Auditor | Executive report'}
+                      </p>
+                      <h3 className="text-4xl font-black text-[#004884] uppercase tracking-tight">
+                        {lang === 'ES' ? 'Informe de hallazgos priorizados' : 'Prioritized findings report'}
+                      </h3>
+                      <p className="text-sm text-gray-600 max-w-2xl leading-relaxed">
+                        {lang === 'ES'
+                          ? 'Documento de lectura rápida para dirección, auditoría o control interno. Resume cobertura, criterios observados y expedientes que exigen validación inmediata.'
+                          : 'Fast-reading document for leadership, audit, or internal control. Summarizes coverage, observed criteria, and cases that require immediate validation.'}
+                      </p>
+                    </div>
+                    <div className="text-right text-[11px] text-gray-500 font-bold">
+                      <p>{lang === 'ES' ? 'Emitido' : 'Issued'}: {new Date().toLocaleString(lang === 'ES' ? 'es-CO' : 'en-CA')}</p>
+                      <p>{lang === 'ES' ? 'Cobertura' : 'Coverage'}: {auditCoverage.totalContracts} {lang === 'ES' ? 'contratos' : 'contracts'}</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    {[
+                      { label: lang === 'ES' ? 'Entidades cubiertas' : 'Entities covered', value: auditCoverage.entityCount || monitoredEntities.length },
+                      { label: lang === 'ES' ? 'Contratos analizados' : 'Contracts analyzed', value: auditCoverage.totalContracts },
+                      { label: lang === 'ES' ? 'Casos en rojo' : 'Red cases', value: results.filter((item) => item.risk === 'Red').length },
+                      { label: lang === 'ES' ? 'Exposicion agregada' : 'Total exposure', value: formatCompactCop(results.reduce((sum, item) => sum + item.totalValue, 0)) },
+                    ].map((item) => (
+                      <div key={item.label} className="bg-gray-50 border border-gray-100 p-4">
+                        <p className="header-label !text-gray-400">{item.label}</p>
+                        <p className="text-2xl font-black text-[#004884]">{item.value}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="space-y-4">
+                    <h4 className="text-xl font-black text-[#004884] uppercase tracking-tight">
+                      {lang === 'ES' ? 'Como leer este reporte' : 'How to read this report'}
+                    </h4>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {[
+                        lang === 'ES' ? 'El puntaje de riesgo combina similitud semántica, ventana temporal, cuantías y modalidad.' : 'The risk score combines semantic similarity, time window, amounts, and modality.',
+                        lang === 'ES' ? 'Los casos en rojo son prioridad de revisión; no equivalen por sí solos a una decisión jurídica final.' : 'Red cases are priority reviews; they do not by themselves equal a final legal determination.',
+                        lang === 'ES' ? 'Cada expediente puede abrirse para consultar evidencia, contrato observado y fuente SECOP sin salir del sistema.' : 'Each case can be opened to inspect evidence, the observed contract, and the SECOP source without leaving the system.',
+                      ].map((item) => (
+                        <div key={item} className="bg-[#004884]/5 border border-[#004884]/10 p-4 text-sm text-gray-700 leading-relaxed">
+                          {item}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <h4 className="text-xl font-black text-[#004884] uppercase tracking-tight">
+                      {lang === 'ES' ? 'Expedientes priorizados' : 'Prioritized case files'}
+                    </h4>
+                    <div className="space-y-4">
+                      {results
+                        .slice()
+                        .sort((a, b) => b.riskScore - a.riskScore)
+                        .slice(0, 8)
+                        .map((item) => (
+                          <div key={item.groupKey} className="border border-[#E6E6E6] p-5 space-y-3">
+                            <div className="flex items-start justify-between gap-4">
+                              <div>
+                                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">{item.groupKey}</p>
+                                <h5 className="text-lg font-black text-[#333333] uppercase">{item.providerName}</h5>
+                              </div>
+                              <span className={cn(
+                                'px-3 py-1 text-[10px] font-black uppercase tracking-widest',
+                                item.risk === 'Red' ? 'bg-red-600 text-white' : item.risk === 'Orange' ? 'bg-[#FCD059] text-[#333333]' : 'bg-[#004884] text-white'
+                              )}>
+                                {item.risk} {item.riskScore.toFixed(0)}%
+                              </span>
+                            </div>
+                            <p className="text-sm text-gray-600 leading-relaxed">
+                              {item.quickObservation || (lang === 'ES' ? 'Revisión prioritaria basada en señales agregadas del grupo contractual.' : 'Priority review driven by the aggregated signals of the contract cluster.')}
+                            </p>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                              <div className="bg-gray-50 border border-gray-100 p-3"><span className="font-black text-[#004884]">{lang === 'ES' ? 'Entidades' : 'Entities'}:</span> {summarizeList(uniqueEntityNames(item.contracts), 2)}</div>
+                              <div className="bg-gray-50 border border-gray-100 p-3"><span className="font-black text-[#004884]">{lang === 'ES' ? 'Valor total' : 'Total amount'}:</span> {formatCompactCop(item.totalValue)}</div>
+                              <div className="bg-gray-50 border border-gray-100 p-3"><span className="font-black text-[#004884]">{lang === 'ES' ? 'Señal líder' : 'Lead signal'}:</span> {item.redFlags[0] || (lang === 'ES' ? 'Sin alerta textual' : 'No textual alert')}</div>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {sourceContract && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/55 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ scale: 0.96, y: 18 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.96, y: 18 }}
+              className="bg-white w-full max-w-6xl h-[86vh] border-4 border-[#004884] shadow-2xl overflow-hidden flex"
+            >
+              <div className="w-[360px] shrink-0 border-r border-[#E6E6E6] bg-gray-50 p-6 space-y-6 overflow-y-auto custom-scrollbar">
+                <div className="space-y-2">
+                  <p className="header-label !mb-0">{lang === 'ES' ? 'Fuente contractual' : 'Contract source'}</p>
+                  <h4 className="text-2xl font-black text-[#004884] uppercase tracking-tight">
+                    {getContractDisplayId(sourceContract)}
+                  </h4>
+                  <p className="text-sm text-gray-500 leading-relaxed">{sourceContract.objeto_del_contrato}</p>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3">
+                  {buildSourceEvidenceRows(sourceContract, lang).map((item) => (
+                    <div key={`${item.label}-${item.value}`} className="bg-white border border-[#E6E6E6] p-4 space-y-1">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">{item.label}</p>
+                      <p className="text-[11px] font-bold text-[#333333] break-words">{item.value}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex-1 flex flex-col min-w-0">
+                <div className="p-6 border-b border-[#E6E6E6] flex items-start justify-between gap-6">
+                  <div className="space-y-2">
+                    <p className="header-label !mb-0">{lang === 'ES' ? 'Vista interna SECOP' : 'Internal SECOP view'}</p>
+                    <h4 className="text-2xl font-black text-[#333333] uppercase tracking-tight">
+                      {sourcePreview?.title || (lang === 'ES' ? 'Cargando soporte oficial' : 'Loading official source')}
+                    </h4>
+                    <p className="text-sm text-gray-500">
+                      {lang === 'ES'
+                        ? 'La fuente se consulta y se presenta dentro del sistema para no romper el flujo de auditoria.'
+                        : 'The source is fetched and rendered inside the system to preserve the audit workflow.'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={closeSourcePreview}
+                    className="w-10 h-10 flex items-center justify-center text-gray-400 hover:bg-[#004884] hover:text-white transition-all"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto custom-scrollbar p-8 bg-white space-y-6">
+                  {sourceLoading ? (
+                    <div className="h-full min-h-[320px] flex flex-col items-center justify-center gap-4">
+                      <Loader2 className="animate-spin text-[#004884]" size={36} />
+                      <p className="text-[11px] font-black uppercase tracking-[0.2em] text-[#004884]">
+                        {lang === 'ES' ? 'Consultando SECOP...' : 'Querying SECOP...'}
+                      </p>
+                    </div>
+                  ) : sourceError ? (
+                    <div className="border border-red-100 bg-red-50 p-6 space-y-3">
+                      <p className="text-[11px] font-black uppercase tracking-widest text-red-700">
+                        {lang === 'ES' ? 'No se pudo cargar la fuente oficial' : 'Official source could not be loaded'}
+                      </p>
+                      <p className="text-sm text-red-700 leading-relaxed">{sourceError}</p>
+                      <div className="bg-white border border-red-100 p-4 text-sm text-gray-600">
+                        {lang === 'ES'
+                          ? 'El expediente conserva la metadata contractual y el identificador del proceso para continuar la revision sin salir del sistema.'
+                          : 'The case file still preserves the contract metadata and process identifier so the review can continue without leaving the system.'}
+                      </div>
+                    </div>
+                  ) : sourcePreview ? (
+                    <>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="bg-gray-50 border border-[#E6E6E6] p-4">
+                          <p className="header-label !text-gray-400">{lang === 'ES' ? 'Estado HTTP' : 'HTTP status'}</p>
+                          <p className="text-lg font-black text-[#004884]">{sourcePreview.statusCode}</p>
+                        </div>
+                        <div className="bg-gray-50 border border-[#E6E6E6] p-4">
+                          <p className="header-label !text-gray-400">{lang === 'ES' ? 'Consulta' : 'Retrieved at'}</p>
+                          <p className="text-sm font-black text-[#333333]">{new Date(sourcePreview.fetchedAt).toLocaleString(lang === 'ES' ? 'es-CO' : 'en-CA')}</p>
+                        </div>
+                        <div className="bg-gray-50 border border-[#E6E6E6] p-4">
+                          <p className="header-label !text-gray-400">{lang === 'ES' ? 'Origen' : 'Origin'}</p>
+                          <p className="text-sm font-black text-[#333333] break-all">{sourcePreview.url}</p>
+                        </div>
+                      </div>
+
+                      <div className="border border-[#E6E6E6] bg-white p-6 space-y-4">
+                        <p className="header-label">{lang === 'ES' ? 'Resumen util para auditoria' : 'Audit-ready summary'}</p>
+                        <p className="text-sm text-gray-600 leading-relaxed">{sourcePreview.excerpt}</p>
+                      </div>
+
+                      <div className="border border-[#E6E6E6] bg-gray-50 p-6 space-y-4">
+                        <p className="header-label">{lang === 'ES' ? 'Texto recuperado de la fuente' : 'Recovered source text'}</p>
+                        <div className="bg-white border border-gray-100 p-5 text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+                          {sourcePreview.bodyText || (lang === 'ES' ? 'Sin contenido textual recuperable.' : 'No recoverable text content.')}
+                        </div>
+                      </div>
+                    </>
+                  ) : null}
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showEscalationGuide && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[121] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ scale: 0.97, y: 16 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.97, y: 16 }}
+              className="bg-white w-full max-w-3xl border-4 border-[#004884] shadow-2xl p-8 space-y-6"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-2">
+                  <p className="header-label !mb-0">{lang === 'ES' ? 'Escalamiento institucional' : 'Institutional escalation'}</p>
+                  <h4 className="text-3xl font-black text-[#004884] uppercase tracking-tight">
+                    {lang === 'ES' ? 'Ruta sugerida para elevar el caso' : 'Suggested path to escalate the case'}
+                  </h4>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowEscalationGuide(false)}
+                  className="w-10 h-10 flex items-center justify-center text-gray-400 hover:bg-[#004884] hover:text-white transition-all"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {[
+                  lang === 'ES' ? '1. Congelar el dossier probatorio y validar el soporte SECOP visible.' : '1. Freeze the evidence dossier and validate the visible SECOP support.',
+                  lang === 'ES' ? '2. Contrastar estudios previos, presupuesto, modalidad y trazabilidad del proveedor.' : '2. Compare prior studies, budget support, modality, and supplier traceability.',
+                  lang === 'ES' ? '3. Elevar el expediente por los canales institucionales definidos por la entidad de control.' : '3. Escalate the case through the institutional channels defined by the oversight body.',
+                ].map((step) => (
+                  <div key={step} className="bg-gray-50 border border-[#E6E6E6] p-5 text-sm font-medium text-gray-700 leading-relaxed">
+                    {step}
+                  </div>
+                ))}
+              </div>
+
+              <div className="bg-[#004884]/5 border border-[#004884]/10 p-6 text-sm text-gray-700 leading-relaxed">
+                {lang === 'ES'
+                  ? 'El sistema no saca al usuario del flujo principal. Esta guia deja lista la secuencia de validacion y escalamiento para que el caso se pueda presentar de forma ordenada.'
+                  : 'The system does not force the user out of the main workflow. This guide keeps the validation and escalation sequence ready so the case can be presented in an orderly way.'}
               </div>
             </motion.div>
           </motion.div>
@@ -1113,6 +2251,7 @@ export default function App() {
         logs={agentLogs}
         currentConfig={config} 
         onRetroactiveAudit={() => handleRetroactiveAudit()}
+        onSelfLearning={handleSelfLearning}
         onSave={(e: any) => {
           e.preventDefault();
           const formData = new FormData(e.currentTarget);
@@ -1151,6 +2290,38 @@ function getInvestigationAction(result: AnalysisResult, isEs: boolean) {
   return isEs
     ? 'Mantener monitoreo y re-evaluar cuando entren nuevos registros SECOP.'
     : 'Keep monitoring and re-score when new SECOP records arrive.';
+}
+
+function getReasonNarrative(reason: string, isEs: boolean) {
+  const normalized = reason.toLowerCase();
+
+  if (normalized.includes('directa')) {
+    return isEs
+      ? 'El contrato muestra uso reiterado de modalidades no competitivas, por lo que debe revisarse si la necesidad pudo tramitarse mediante un proceso más abierto.'
+      : 'The contract shows repeated use of non-competitive procedures and should be reviewed to confirm whether a more open process was required.';
+  }
+
+  if (normalized.includes('similitud') || normalized.includes('identidad')) {
+    return isEs
+      ? 'La redacción del objeto contractual se parece de forma material a otros contratos del mismo proveedor, lo que sugiere posible fragmentación de una misma necesidad.'
+      : 'The contract object is materially similar to other contracts from the same provider, suggesting a possible fragmentation of the same need.';
+  }
+
+  if (normalized.includes('cuant')) {
+    return isEs
+      ? 'La cuantía se mueve dentro de una banda estrecha junto a otros contratos comparables, un patrón típico de división artificial del gasto.'
+      : 'The amount moves within a narrow band alongside other comparable contracts, a typical pattern of artificial spend splitting.';
+  }
+
+  if (normalized.includes('temporal') || normalized.includes('frecuencia')) {
+    return isEs
+      ? 'La cercanía entre fechas de firma indica concentración operativa en una ventana corta, un factor relevante para revisar planeación y agregación de demanda.'
+      : 'The proximity of signature dates indicates operational concentration within a short window, a relevant factor when reviewing planning and demand aggregation.';
+  }
+
+  return isEs
+    ? 'El sistema detectó un indicio técnico que justifica revisión documental prioritaria.'
+    : 'The system detected a technical clue that justifies prioritized document review.';
 }
 
 function getLifecycleCoverage(result: AnalysisResult | null, isEs: boolean) {
@@ -1212,12 +2383,12 @@ function AuditCommandCenter({
           </h3>
           <p className="text-sm text-gray-500 font-medium max-w-3xl">
             {isEs
-              ? 'La vista principal ahora se comporta como una sala de control: prioriza expedientes, muestra trazabilidad estilo OCDS y sugiere el siguiente paso verificable.'
-              : 'The main view now behaves like a control room: it prioritizes cases, shows OCDS-style traceability, and suggests the next verifiable step.'}
+              ? 'Aquí se priorizan los casos con mayor riesgo y se sugiere el siguiente paso de revisión para cada expediente.'
+              : 'This area prioritizes the highest-risk cases and suggests the next review step for each file.'}
           </p>
         </div>
         <div className="bg-[#f0f7ff] border border-[#004884]/10 p-5 min-w-48">
-          <p className="header-label !text-gray-400">{isEs ? 'Cobertura ciclo OCDS' : 'OCDS lifecycle coverage'}</p>
+          <p className="header-label !text-gray-400">{isEs ? 'Cobertura del expediente' : 'Case coverage'}</p>
           <p className="text-3xl font-black text-[#004884] tabular-nums">{leadCase ? `${lifecycleScore}%` : '--'}</p>
         </div>
       </div>
@@ -1269,7 +2440,7 @@ function AuditCommandCenter({
 
         <div className="bg-white border border-[#E6E6E6] p-6 space-y-5">
           <div className="flex items-center justify-between">
-            <p className="header-label !mb-0">{isEs ? 'Trazabilidad OCDS' : 'OCDS traceability'}</p>
+            <p className="header-label !mb-0">{isEs ? 'Trazabilidad del expediente' : 'Case traceability'}</p>
             <Files size={16} className="text-[#004884]" />
           </div>
           <div className="space-y-3">
@@ -1290,8 +2461,8 @@ function AuditCommandCenter({
           </div>
           <div className="bg-amber-50 border border-amber-100 p-4 text-[10px] text-amber-800 font-bold uppercase leading-relaxed">
             {isEs
-              ? 'Brecha clave: evidencia de ejecucion. Para ser clase mundial, el siguiente salto es conectar fotos, interventoria, pagos y avance fisico.'
-              : 'Key gap: implementation evidence. To become best-in-class, the next leap is connecting photos, oversight, payments, and physical progress.'}
+              ? 'La revisión actual cubre planeación, selección, adjudicación y formalización. La evidencia de ejecución sigue pendiente de validación documental.'
+              : 'The current review covers planning, selection, award, and formalization. Execution evidence still requires document validation.'}
           </div>
         </div>
       </div>
@@ -1345,16 +2516,16 @@ function NeuralCenter({
             </div>
             <div className="space-y-2">
               <h3 className="text-2xl font-black text-[#004884] uppercase tracking-tighter">
-                {isEs ? 'Conectado al Panel de Auditoria' : 'Connected to the Audit Panel'}
+                {isEs ? 'Resumen de aprendizaje y recalibración' : 'Learning and recalibration summary'}
               </h3>
               <p className="text-sm text-gray-500 font-medium max-w-3xl">
                 {hasPanelData
                   ? (isEs
-                    ? `La red esta leyendo ${panelState.connectedFindings} hallazgo(s), ${panelState.highRiskFindings} alerta(s) rojas y ${formatCompactCop(panelState.totalExposure)} de exposicion fiscal activa.`
-                    : `The network is reading ${panelState.connectedFindings} finding(s), ${panelState.highRiskFindings} red alert(s), and ${formatCompactCop(panelState.totalExposure)} in active fiscal exposure.`)
+                    ? `Se consolidaron ${panelState.connectedFindings} hallazgo(s), ${panelState.highRiskFindings} alerta(s) críticas y ${formatCompactCop(panelState.totalExposure)} en exposición revisada.`
+                    : `The system consolidated ${panelState.connectedFindings} finding(s), ${panelState.highRiskFindings} critical alert(s), and ${formatCompactCop(panelState.totalExposure)} in reviewed exposure.`)
                   : (isEs
-                    ? 'Ejecuta una busqueda para alimentar el panel; el centro analitico usara esos hallazgos como contexto vivo.'
-                    : 'Run a search to feed the panel; the analytic hub will use those findings as live context.')}
+                    ? 'Ejecuta una búsqueda para activar el análisis y habilitar la recalibración sobre casos reales.'
+                    : 'Run a search to activate the analysis and enable recalibration on real cases.')}
               </p>
             </div>
           </div>
@@ -1407,7 +2578,7 @@ function NeuralCenter({
                 <div className="relative group/tooltip">
                   <Info size={12} className="text-gray-200" />
                   <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-3 bg-[#333333] text-[10px] text-white opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-[100] shadow-xl">
-                    Total de auditorías y simulaciones procesadas por la red neural.
+                    Total de ciclos de revisión y recalibración ejecutados sobre el sistema.
                   </div>
                 </div>
                </div>
@@ -1420,7 +2591,7 @@ function NeuralCenter({
                 <div className="relative group/tooltip">
                   <Info size={12} className="text-gray-200" />
                   <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-3 bg-[#333333] text-[10px] text-white opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-[100] shadow-xl">
-                    Nivel de precisión actual tras el entrenamiento autónomo.
+                    Ajuste acumulado de sensibilidad aplicado a partir del aprendizaje reciente.
                   </div>
                 </div>
                </div>
@@ -1447,7 +2618,7 @@ function NeuralCenter({
                 [{new Date(log.timestamp).toLocaleTimeString()}] [{log.agent}] {log.message}
               </p>
             )) : (
-              <p className="opacity-30">SIN ACTIVIDAD REGISTRADA EN ÉSTA SESIÓN</p>
+              <p className="opacity-30">{isEs ? 'Sin actividad registrada en esta sesión' : 'No activity recorded in this session'}</p>
             )}
           </div>
         </div>
@@ -1513,6 +2684,7 @@ function AdvancedSettingsModal({
   logs,
   currentConfig,
   onRetroactiveAudit,
+  onSelfLearning,
   onSave,
 }: {
   isOpen: boolean;
@@ -1523,6 +2695,7 @@ function AdvancedSettingsModal({
   logs: any[];
   currentConfig: AnalysisConfig;
   onRetroactiveAudit: () => void;
+  onSelfLearning: () => Promise<any>;
   onSave: (e: any) => void;
 }) {
   const [activeTab, setActiveTab] = useState<'CALIBRATION' | 'INTELLIGENCE' | 'NETWORK' | 'HISTORY' | 'MANUAL'>('CALIBRATION');
@@ -1551,12 +2724,12 @@ function AdvancedSettingsModal({
               <div className="space-y-2">
                 <p className="header-label !mb-0">{isEs ? 'Consola avanzada' : 'Advanced console'}</p>
                 <h3 className="text-3xl font-black text-[#004884] uppercase tracking-tighter leading-none">
-                  {isEs ? 'Configuracion, red e inteligencia' : 'Configuration, network and intelligence'}
+                  {isEs ? 'Configuración del sistema' : 'System configuration'}
                 </h3>
                 <p className="text-sm text-gray-500 font-medium max-w-3xl">
                   {isEs
-                    ? 'Lo tecnico vive aqui para no contaminar el flujo principal de auditoria. El usuario opera desde el panel; el equipo experto calibra desde esta consola.'
-                    : 'Technical operations live here so they do not pollute the main audit flow. Users work from the panel; expert teams calibrate here.'}
+                    ? 'Este espacio reúne parámetros, conocimiento, modelos y trazabilidad para administrar el producto con criterio técnico.'
+                    : 'This workspace brings together parameters, knowledge, models, and traceability to administer the product with technical rigor.'}
                 </p>
               </div>
               <button data-testid="advanced-console-close" onClick={onClose} className="w-10 h-10 flex items-center justify-center text-gray-400 hover:bg-[#004884] hover:text-white transition-all">
@@ -1621,6 +2794,7 @@ function AdvancedSettingsModal({
                     <KnowledgeBase
                       results={results}
                       onRetroactiveAudit={onRetroactiveAudit}
+                      onSelfLearning={onSelfLearning}
                       lang={lang}
                     />
                   </div>
@@ -1647,7 +2821,7 @@ function AdvancedSettingsModal({
                       </div>
                     </div>
                     <div className="bg-white border border-[#E6E6E6] p-6 space-y-4">
-                      <p className="header-label">{isEs ? 'Simulacion multiagente' : 'Multi-agent simulation'}</p>
+                      <p className="header-label">{isEs ? 'Orquestacion multiagente' : 'Multi-agent orchestration'}</p>
                       <AgentOffice logs={logs} />
                     </div>
                   </div>

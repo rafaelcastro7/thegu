@@ -10,11 +10,12 @@ interface TechnicalFindingsProps {
   result: AnalysisResult;
   lang: 'ES' | 'EN';
   onAskAuditor: (finding: any) => void;
+  onOpenSource: (contract: Contract) => void;
   expandedContract: string | null;
   setExpandedContract: (id: string | null) => void;
 }
 
-export function TechnicalFindings({ result, lang, onAskAuditor, expandedContract, setExpandedContract }: TechnicalFindingsProps) {
+export function TechnicalFindings({ result, lang, onAskAuditor, onOpenSource, expandedContract, setExpandedContract }: TechnicalFindingsProps) {
   const isEs = lang === 'ES';
 
   return (
@@ -190,10 +191,10 @@ export function TechnicalFindings({ result, lang, onAskAuditor, expandedContract
                         {contractData.objeto_del_contrato}
                       </div>
                       <button 
-                        onClick={() => window.open(`https://www.secop.gov.co/Consultas/busqueda/detalle-del-proceso.aspx?IdProcess=${finding.contractId}`, '_blank')}
+                        onClick={() => onOpenSource(contractData)}
                         className="w-full py-2 bg-gray-200 text-gray-600 text-[9px] font-black uppercase tracking-widest hover:bg-gray-300 transition-all flex items-center justify-center gap-2"
                       >
-                        <ExternalLink size={12} /> {isEs ? 'VER EN SECOP II' : 'VIEW IN SECOP II'}
+                        <ExternalLink size={12} /> {isEs ? 'ABRIR FUENTE SECOP' : 'OPEN SECOP SOURCE'}
                       </button>
                     </div>
                   </motion.div>

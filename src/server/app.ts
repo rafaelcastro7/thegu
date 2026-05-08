@@ -30,6 +30,29 @@ function requireStringArray(value: unknown, field: string) {
   return value;
 }
 
+function buildSecopSourceUrl(processRef: string) {
+  return `https://www.secop.gov.co/Consultas/busqueda/detalle-del-proceso.aspx?IdProcess=${encodeURIComponent(processRef)}`;
+}
+
+function stripHtml(html: string) {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, "\"")
+    .replace(/&#39;/gi, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extractTitle(html: string) {
+  const match = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  return match?.[1]?.replace(/\s+/g, " ").trim() || "Fuente SECOP";
+}
+
 export async function createApp() {
   const app = express();
   app.use(express.json({ limit: config.jsonLimit }));
@@ -58,6 +81,48 @@ export async function createApp() {
     const limit = readLimit(req.query.limit, 50, 100);
     const contracts = await fetchContractsFromSecop(entity, limit);
     res.json(contracts);
+  }));
+
+  app.get("/api/secop/source", asyncHandler(async (req, res) => {
+    const url = typeof req.query.url === "string" && req.query.url.trim().length > 0
+      ? req.query.url.trim()
+      : null;
+    const processId = typeof req.query.processId === "string" && req.query.processId.trim().length > 0
+      ? req.query.processId.trim()
+      : null;
+    const sourceUrl = url || (processId ? buildSecopSourceUrl(processId) : null);
+
+    if (!sourceUrl) {
+      throw new HttpError(400, "url or processId is required");
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
+
+    try {
+      const response = await fetch(sourceUrl, {
+        headers: {
+          "user-agent": "GobIA-Auditor/1.0",
+          "accept": "text/html,application/xhtml+xml",
+        },
+        signal: controller.signal,
+      });
+
+      const html = await response.text();
+      const bodyText = stripHtml(html);
+      const title = extractTitle(html);
+
+      res.json({
+        url: sourceUrl,
+        title,
+        fetchedAt: new Date().toISOString(),
+        statusCode: response.status,
+        excerpt: bodyText.slice(0, 2000),
+        bodyText: bodyText.slice(0, 20000),
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
   }));
 
   app.post("/api/cache/analysis", asyncHandler(async (req, res) => {

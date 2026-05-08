@@ -69,7 +69,7 @@ test("loads a persisted finding and generates a forensic report", async ({ page 
   }, { payload: contract, key: groupKey });
 
   await page.goto("/");
-  await expect(page).toHaveTitle(/BHA/i);
+  await expect(page).toHaveTitle(/GobIA Auditor/i);
   await expect(page.getByTestId("search-input")).toBeVisible();
   await expect(page.getByTestId("analytics-bridge")).toBeVisible();
   await expect(page.getByTestId("analytics-connected-findings")).toContainText("1");

@@ -21,7 +21,7 @@
 }
 
 .gov-card {
-  @apply bg-white border border-[#E6E6E6] shadow-sm rounded-none transition-all hover:shadow-md;
+  @apply bg-white border border-[#E6E6E6] shadow-sm rounded-none transition-shadow hover:shadow-md;
 }
 
 .gov-button {
