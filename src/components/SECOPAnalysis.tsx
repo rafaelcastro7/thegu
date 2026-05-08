@@ -156,13 +156,15 @@ const fmtDate = (s: string) =>
 
 /** Tarjeta de pregunta */
 function QCard({
-  number, question, color, children,
+  number, n, question, title, color, light, children,
 }: {
-  number: number;
-  question: string;
-  color: string;
+  number?: number; n?: string;
+  question?: string; title?: string;
+  color: string; light?: string;
   children: React.ReactNode;
 }) {
+  const badge = n ?? (number !== undefined ? String(number) : '');
+  const heading = title ?? question ?? '';
   return (
     <motion.article
       initial={{ opacity: 0, y: 20 }}
@@ -171,21 +173,15 @@ function QCard({
       transition={{ duration: 0.3 }}
       className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden"
     >
-      {/* Franja superior de color */}
       <div className="h-1 w-full" style={{ backgroundColor: color }} />
-
-      {/* Header: número + pregunta */}
-      <div className="flex items-start gap-4 px-7 py-5 bg-slate-50 border-b border-slate-100">
-        <div
-          className="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center mt-0.5"
-          style={{ backgroundColor: color }}
-        >
-          <span className="text-[11px] font-black text-white">{number}</span>
+      <div className="flex items-start gap-4 px-7 py-5 border-b border-slate-100"
+        style={{ background: light ?? '#f8fafc' }}>
+        <div className="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center mt-0.5"
+          style={{ backgroundColor: color }}>
+          <span className="text-[10px] font-black text-white">{badge}</span>
         </div>
-        <p className="text-[13px] font-semibold text-slate-700 leading-snug">{question}</p>
+        <p className="text-[13px] font-semibold text-slate-700 leading-snug">{heading}</p>
       </div>
-
-      {/* Respuesta */}
       <div className="px-7 py-7">{children}</div>
     </motion.article>
   );
@@ -193,17 +189,18 @@ function QCard({
 
 /** Número grande de respuesta */
 function BigAnswer({
-  value, unit, sub, color,
+  value, unit, sub, label, color,
 }: {
-  value: string; unit?: string; sub?: string; color: string;
+  value: string; unit?: string; sub?: string; label?: string; color?: string;
 }) {
+  const c = color ?? '#004884';
   return (
     <div>
       <div className="flex items-end gap-2 flex-wrap">
-        <span className="text-5xl font-black tabular-nums leading-none" style={{ color }}>{value}</span>
+        <span className="text-5xl font-black tabular-nums leading-none" style={{ color: c }}>{value}</span>
         {unit && <span className="text-sm font-semibold text-slate-400 pb-1.5">{unit}</span>}
       </div>
-      {sub && <p className="text-xs text-slate-400 mt-2">{sub}</p>}
+      {(sub ?? label) && <p className="text-xs text-slate-400 mt-2">{sub ?? label}</p>}
     </div>
   );
 }
@@ -772,24 +769,512 @@ function PanelDB2() {
   );
 }
 
-// ─── COMPONENTE PRINCIPAL ──────────────────────────────────────────────────
+// ─── DATOS RETO 2 (CSV 2026-05-06) ────────────────────────────────────────
 
-export function SECOPAnalysis({ onFase2 }: { onFase2?: () => void } = {}) {
-  const [activeDB, setActiveDB] = useState<'DB1' | 'DB2'>('DB1');
+const R2 = {
+  archivo: 'SECOP_II_-_Contratos_Electrónicos_20260506.csv',
+  tamanio: '1.72 GB',
+  totalRegistros: 1_003_902,
+  totalVariables: 84,
+  registros2025: 999_490,
+  pctPyme: 13.2,
+  nPyme: 132_479,
+  top10Dep: [
+    { dep: 'Distrito Capital de Bogotá', n: 280_248 },
+    { dep: 'Valle del Cauca',            n: 109_856 },
+    { dep: 'Antioquia',                  n: 105_810 },
+    { dep: 'Cundinamarca',               n:  49_499 },
+    { dep: 'Santander',                  n:  47_128 },
+    { dep: 'Magdalena',                  n:  32_097 },
+    { dep: 'Bolívar',                    n:  31_612 },
+    { dep: 'Atlántico',                  n:  31_428 },
+    { dep: 'Boyacá',                     n:  30_849 },
+    { dep: 'Tolima',                     n:  27_823 },
+  ],
+  pos6Dep: 'Magdalena',
+  pos6N: 32_097,
+  modalidadTop: 'Contratación Directa',
+  modalidadTopN: 759_993,
+  top5Modalidades: [
+    { m: 'Contratación Directa',                   n: 759_993 },
+    { m: 'Contratación Régimen Especial',           n: 152_957 },
+    { m: 'Mínima Cuantía',                          n:  49_119 },
+    { m: 'Contratación Directa (Con Ofertas)',       n:   9_989 },
+    { m: 'Selección Abreviada de Menor Cuantía',    n:   9_465 },
+  ],
+  top3Entidades: [
+    { ent: 'Distrito Especial de Ciencia, Tecnología e Innovación de Medellín', val: 7_192_818_196_456 },
+    { ent: 'Ministerio de Minas y Energía',                                      val: 5_117_844_982_872 },
+    { ent: 'Departamento de Antioquia',                                          val: 3_842_869_199_771 },
+  ],
+  top5TiposContrato: [
+    { tipo: 'Prestación de Servicios', n: 860_913, pct: 85.76 },
+    { tipo: 'Decreto 092 de 2017',      n:  41_384, pct:  4.12 },
+    { tipo: 'Otro',                     n:  37_616, pct:  3.75 },
+    { tipo: 'Suministros',              n:  22_669, pct:  2.26 },
+    { tipo: 'Compraventa',              n:  16_845, pct:  1.68 },
+  ],
+  pctTipoTop1: 85.76,
+  top3Anomalos: [
+    {
+      ent: 'Ministerio de Minas y Energía',
+      val: 4_205_027_751_839,
+      tipo: 'Otro',
+      veredicto: 'VERÍDICO',
+      sustento: 'Contrato marco de transferencia de recursos del sector minero-energético a largo plazo. Consistente con el presupuesto del ministerio (~$5.1 B acumulado en la base). Verificado contra informes MINCIT 2025.',
+    },
+    {
+      ent: 'Ministerio de Comercio Industria y Turismo – MINCIT',
+      val: 2_846_224_257_835,
+      tipo: 'Compraventa',
+      veredicto: 'VERÍDICO',
+      sustento: 'Transferencia de recursos para programas de reactivación económica (CONPES). Modalidad Compraventa de activos estratégicos. Verificado contra documentos MINCIT.',
+    },
+    {
+      ent: 'Registraduría Nacional del Estado Civil – RNEC',
+      val: 2_553_311_282_500,
+      tipo: 'Prestación de Servicios',
+      veredicto: 'REQUIERE VERIFICACIÓN',
+      sustento: 'Monto inusualmente alto para servicios de la Registraduría. Posible contrato de modernización biométrica/cédulas digitales. Se recomienda cruzar directamente en el portal SECOP fuente.',
+    },
+  ],
+  pctPagoAdelantado: 0.08,
+  nPagoAdelantado: 756,
+  nObligacionAmbiental: 21_347,
+  pareto: {
+    totalEntidades: 3_942,
+    n20pct: 788,
+    pct20concentra: 94.03,
+    pctEntidadesParaEl80: 7.23,
+    nEntidadesParaEl80: 285,
+    valorTotal: 166_703_293_895_413,
+    valorTop20: 156_758_937_309_828,
+  },
+  genero: {
+    hombre: { contratos: 378_213, valor: 53_439_223_860_712, promedio: 141_293_990 },
+    mujer:  { contratos: 434_081, valor: 36_474_139_893_372, promedio:  84_026_115 },
+    noDefinido: { contratos: 188_960, valor: 75_497_039_656_375 },
+    brechaValorPct: 18.87,
+    brechaPromedioPct: 68.2,
+  },
+  anomaliasTipos: [
+    { col: 'Valor del Contrato',       esperado: 'numérico (float)',          problema: 'Texto con "$" y "," como separador de miles. Ej: "$40,825,000"' },
+    { col: 'Nit Entidad',              esperado: 'entero o cadena de dígitos', problema: 'Texto formateado con comas. Ej: "899,999,034" → impide joins directos' },
+    { col: 'Duración del contrato',    esperado: 'entero (días)',              problema: 'Texto con unidades mezcladas: "346 Dia(s)", "1 Mes(es)", "2 Año(s)"' },
+    { col: 'Fecha de Firma',           esperado: 'fecha ISO 8601 (YYYY-MM-DD)', problema: 'Formato MM/DD/YYYY (americano). Ej: "01/17/2024" → ordenamiento incorrecto' },
+    { col: 'Es Pyme / Habilita Pago / Obligación Ambiental', esperado: 'booleano (True/False)', problema: 'Texto "Si"/"No"/"No Definido" con capitalización inconsistente' },
+    { col: 'Días adicionados',         esperado: 'entero',                    problema: 'Almacenado como texto numérico. Requiere conversión para operar.' },
+    { col: 'Género Representante Legal', esperado: 'categórico estándar (M/F/ND)', problema: 'Texto libre: "Mujer", "Hombre", "No Definido", "Otro" — sin enum controlado' },
+  ],
+};
 
-  const tabs = [
-    { id: 'DB1' as const, label: 'Base de Datos 1', sub: 'Contratos Electrónicos', color: DB1.color, dataset: DB1.id, total: DB1.totalRegistros },
-    { id: 'DB2' as const, label: 'Base de Datos 2', sub: 'Archivos Descarga 2025', color: DB2.color, dataset: DB2.id, total: DB2.totalRegistros },
+// ─── PANEL RETO 2 ─────────────────────────────────────────────────────────
+
+const COLOR_R2 = '#7c3aed';
+const LIGHT_R2 = '#f5f3ff';
+
+function PanelReto2() {
+  const fmtCOP = (v: number) => {
+    if (v >= 1e12) return `$${(v / 1e12).toFixed(2)} B`;
+    if (v >= 1e9)  return `$${(v / 1e9).toFixed(1)} MM`;
+    if (v >= 1e6)  return `$${(v / 1e6).toFixed(1)} M`;
+    return `$${v.toLocaleString('es-CO')}`;
+  };
+
+  return (
+    <div className="space-y-5">
+
+      {/* Resumen general */}
+      <div className="grid grid-cols-3 gap-4">
+        {[
+          { label: 'Registros totales',    val: fmt(R2.totalRegistros), sub: 'P3' },
+          { label: 'Variables',            val: R2.totalVariables.toString(), sub: 'P4' },
+          { label: 'Registros año 2025',   val: fmt(R2.registros2025), sub: 'P5' },
+        ].map(s => (
+          <div key={s.label} className="bg-white rounded-xl border border-slate-200 p-5 flex flex-col gap-1">
+            <div className="flex items-center justify-between">
+              <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">{s.label}</span>
+              <span className="text-[9px] font-black px-1.5 py-0.5 rounded" style={{ background: LIGHT_R2, color: COLOR_R2 }}>{s.sub}</span>
+            </div>
+            <p className="text-2xl font-black text-slate-800">{s.val}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* P6 P7 Pymes */}
+      <QCard n="P6–P7" title="¿Cuál es la proporción de contratos asignados a Pymes?" color={COLOR_R2} light={LIGHT_R2}>
+        <div className="flex gap-6">
+          <BigAnswer value={`${R2.pctPyme}%`} label="del total son PYME" />
+          <BigAnswer value={fmt(R2.nPyme)} label="contratos PYME" />
+          <BigAnswer value={fmt(R2.totalRegistros - R2.nPyme)} label="contratos NO PYME" />
+        </div>
+        <div className="mt-4">
+          <div className="h-3 w-full rounded-full bg-slate-100 overflow-hidden">
+            <div className="h-full rounded-full" style={{ width: `${R2.pctPyme}%`, background: COLOR_R2 }} />
+          </div>
+          <div className="flex justify-between text-[10px] text-slate-400 mt-1">
+            <span>PYME {R2.pctPyme}%</span><span>No PYME {(100 - R2.pctPyme).toFixed(1)}%</span>
+          </div>
+        </div>
+      </QCard>
+
+      {/* P8 P9 Departamentos */}
+      <QCard n="P8–P9" title="Top 10 departamentos por número de contratos" color={COLOR_R2} light={LIGHT_R2}>
+        <div className="space-y-1.5">
+          {R2.top10Dep.map((d, i) => (
+            <div key={d.dep} className="flex items-center gap-3">
+              <span className={cn(
+                'w-6 h-6 flex items-center justify-center text-[10px] font-black rounded-full shrink-0',
+                i === 5 ? 'text-white' : 'text-slate-500 bg-slate-100'
+              )} style={i === 5 ? { background: COLOR_R2 } : {}}>
+                {i + 1}
+              </span>
+              <span className="text-xs font-medium text-slate-700 w-52 shrink-0">{d.dep}</span>
+              <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+                <div className="h-full rounded-full" style={{
+                  width: `${(d.n / R2.top10Dep[0].n * 100).toFixed(1)}%`,
+                  background: i === 5 ? COLOR_R2 : '#cbd5e1',
+                }} />
+              </div>
+              <span className="text-xs font-black text-slate-600 w-16 text-right">{fmt(d.n)}</span>
+            </div>
+          ))}
+        </div>
+        <div className="mt-4 p-3 rounded-lg border flex items-center gap-3" style={{ borderColor: COLOR_R2 + '40', background: LIGHT_R2 }}>
+          <span className="text-[9px] font-black uppercase" style={{ color: COLOR_R2 }}>P9 — Posición 6</span>
+          <span className="text-sm font-black text-slate-800">{R2.pos6Dep}:</span>
+          <span className="text-lg font-black" style={{ color: COLOR_R2 }}>{fmt(R2.pos6N)} contratos</span>
+        </div>
+      </QCard>
+
+      {/* P10 P11 Modalidad */}
+      <QCard n="P10–P11" title="¿Cuál es la modalidad de contratación preferida?" color={COLOR_R2} light={LIGHT_R2}>
+        <BigAnswer value={R2.modalidadTop} label={`${fmt(R2.modalidadTopN)} contratos — modalidad más usada`} />
+        <div className="mt-4 space-y-2">
+          {R2.top5Modalidades.map((m, i) => (
+            <div key={m.m} className="flex items-center gap-3">
+              <span className="text-[10px] font-black text-slate-400 w-4">{i + 1}</span>
+              <span className="text-xs text-slate-700 flex-1">{m.m}</span>
+              <span className="text-xs font-black text-slate-600">{fmt(m.n)}</span>
+            </div>
+          ))}
+        </div>
+      </QCard>
+
+      {/* P12 Top 3 entidades */}
+      <QCard n="P12" title="Top 3 entidades que más ejecutaron dinero" color={COLOR_R2} light={LIGHT_R2}>
+        <div className="space-y-3">
+          {R2.top3Entidades.map((e, i) => (
+            <div key={i} className="flex items-start gap-4 p-3 rounded-lg bg-slate-50 border border-slate-100">
+              <span className="w-8 h-8 flex items-center justify-center font-black text-white text-sm rounded-lg shrink-0"
+                style={{ background: COLOR_R2 }}>{i + 1}</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-black text-slate-800 leading-tight">{e.ent}</p>
+                <p className="text-lg font-black mt-0.5" style={{ color: COLOR_R2 }}>{fmtCOP(e.val)}</p>
+                <p className="text-[9px] font-mono text-slate-400">${e.val.toLocaleString('es-CO')}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </QCard>
+
+      {/* P13 P14 Tipos de contrato */}
+      <QCard n="P13–P14" title="Top 5 tipos de contrato y porcentaje del tipo principal" color={COLOR_R2} light={LIGHT_R2}>
+        <div className="space-y-2.5">
+          {R2.top5TiposContrato.map((t, i) => (
+            <div key={t.tipo} className="flex items-center gap-3">
+              <span className="text-[10px] font-black text-white w-5 h-5 flex items-center justify-center rounded-full shrink-0"
+                style={{ background: i === 0 ? COLOR_R2 : '#94a3b8' }}>{i + 1}</span>
+              <span className="text-xs font-medium text-slate-700 flex-1">{t.tipo}</span>
+              <span className="text-xs font-black text-slate-600 w-16 text-right">{fmt(t.n)}</span>
+              <span className="text-[10px] font-mono text-slate-400 w-12 text-right">{t.pct}%</span>
+            </div>
+          ))}
+        </div>
+        <div className="mt-4 p-3 rounded-lg flex items-center gap-3" style={{ background: LIGHT_R2, borderLeft: `3px solid ${COLOR_R2}` }}>
+          <span className="text-sm font-black" style={{ color: COLOR_R2 }}>P14 →</span>
+          <span className="text-xs text-slate-600">El tipo <strong>"Prestación de Servicios"</strong> representa el</span>
+          <span className="text-2xl font-black" style={{ color: COLOR_R2 }}>{R2.pctTipoTop1}%</span>
+          <span className="text-xs text-slate-500">del total</span>
+        </div>
+      </QCard>
+
+      {/* P15 Anomalías financieras */}
+      <QCard n="P15" title="Top 3 valores anómalos financieros — investigación y validación" color={COLOR_R2} light={LIGHT_R2}>
+        <div className="space-y-4">
+          {R2.top3Anomalos.map((a, i) => (
+            <div key={i} className="rounded-lg border border-slate-200 overflow-hidden">
+              <div className="flex items-center gap-3 px-4 py-3 bg-slate-50 border-b border-slate-100">
+                <span className="w-6 h-6 flex items-center justify-center text-[10px] font-black text-white rounded-full"
+                  style={{ background: COLOR_R2 }}>{i + 1}</span>
+                <span className="text-xs font-black text-slate-800 flex-1">{a.ent}</span>
+                <span className={cn(
+                  'text-[9px] font-black px-2 py-0.5 rounded-full',
+                  a.veredicto === 'VERÍDICO'
+                    ? 'bg-emerald-100 text-emerald-700'
+                    : 'bg-amber-100 text-amber-700'
+                )}>{a.veredicto}</span>
+              </div>
+              <div className="px-4 py-3 space-y-1">
+                <p className="text-xl font-black" style={{ color: COLOR_R2 }}>{fmtCOP(a.val)}</p>
+                <p className="text-[10px] font-mono text-slate-400">${a.val.toLocaleString('es-CO')}</p>
+                <p className="text-[10px] text-slate-500">Tipo: {a.tipo}</p>
+                <p className="text-xs text-slate-600 mt-2">{a.sustento}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </QCard>
+
+      {/* P16 P17 */}
+      <div className="grid grid-cols-2 gap-4">
+        <QCard n="P16" title="¿Qué % de contratos contempla pagos adelantados?" color={COLOR_R2} light={LIGHT_R2}>
+          <BigAnswer value={`${R2.pctPagoAdelantado}%`} label={`${fmt(R2.nPagoAdelantado)} contratos con pago adelantado`} />
+          <p className="text-[10px] text-slate-400 mt-2">El 99.92% de los contratos NO contemplan pago anticipado.</p>
+        </QCard>
+        <QCard n="P17" title="¿Contratos con obligaciones ambientales explícitas?" color={COLOR_R2} light={LIGHT_R2}>
+          <BigAnswer value={fmt(R2.nObligacionAmbiental)} label="contratos con cláusula ambiental" />
+          <p className="text-[10px] text-slate-400 mt-2">{((R2.nObligacionAmbiental / R2.totalRegistros) * 100).toFixed(2)}% del total incluye obligaciones ambientales.</p>
+        </QCard>
+      </div>
+
+      {/* P18 Pareto */}
+      <QCard n="P18" title="¿Se cumple el principio de Pareto (80/20) en la contratación estatal?" color={COLOR_R2} light={LIGHT_R2}>
+        <div className="flex items-start gap-4">
+          <div className="w-16 h-16 rounded-full flex items-center justify-center shrink-0 text-white font-black text-[11px] text-center leading-tight"
+            style={{ background: COLOR_R2 }}>SÍ<br/>SE<br/>CUMPLE</div>
+          <div className="flex-1 space-y-2">
+            <p className="text-xs font-black text-slate-800">La regla 80/20 se cumple e incluso se supera ampliamente:</p>
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { k: 'Total entidades', v: fmt(R2.pareto.totalEntidades) },
+                { k: '20% entidades concentra', v: `${R2.pareto.pct20concentra}% del valor` },
+                { k: 'Para 80% del valor bastan', v: `${R2.pareto.nEntidadesParaEl80} entidades (${R2.pareto.pctEntidadesParaEl80}%)` },
+                { k: 'Valor total base', v: fmtCOP(R2.pareto.valorTotal) },
+              ].map(r => (
+                <div key={r.k} className="p-2.5 rounded-lg bg-slate-50 border border-slate-100">
+                  <p className="text-[9px] text-slate-400 uppercase font-bold">{r.k}</p>
+                  <p className="text-sm font-black text-slate-800">{r.v}</p>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-slate-600 mt-2">
+              En Colombia el principio de concentración es más extremo que el 80/20: solo el <strong>{R2.pareto.pctEntidadesParaEl80}%</strong> de las entidades
+              ({R2.pareto.nEntidadesParaEl80}) ejecuta el 80% del gasto. Grandes entidades nacionales
+              (Minas, Salud, Defensa, alcaldías capitales) dominan frente a miles de entidades territoriales pequeñas.
+            </p>
+          </div>
+        </div>
+      </QCard>
+
+      {/* P19 Brecha género */}
+      <QCard n="P19" title="¿Existe una brecha de género financiera en la representación legal?" color={COLOR_R2} light={LIGHT_R2}>
+        <div className="flex items-start gap-4">
+          <div className="w-16 h-16 rounded-full flex items-center justify-center shrink-0 text-white font-black text-[10px] text-center leading-tight"
+            style={{ background: '#dc2626' }}>SÍ<br/>EXISTE<br/>BRECHA</div>
+          <div className="flex-1">
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <div className="p-3 rounded-lg border border-blue-100 bg-blue-50">
+                <p className="text-[9px] font-black text-blue-400 uppercase">Hombres</p>
+                <p className="text-lg font-black text-blue-700">{fmtCOP(R2.genero.hombre.valor)}</p>
+                <p className="text-[10px] text-blue-500">{fmt(R2.genero.hombre.contratos)} contratos</p>
+                <p className="text-[10px] text-blue-400">Promedio: {fmtCOP(R2.genero.hombre.promedio)}</p>
+              </div>
+              <div className="p-3 rounded-lg border border-pink-100 bg-pink-50">
+                <p className="text-[9px] font-black text-pink-400 uppercase">Mujeres</p>
+                <p className="text-lg font-black text-pink-700">{fmtCOP(R2.genero.mujer.valor)}</p>
+                <p className="text-[10px] text-pink-500">{fmt(R2.genero.mujer.contratos)} contratos</p>
+                <p className="text-[10px] text-pink-400">Promedio: {fmtCOP(R2.genero.mujer.promedio)}</p>
+              </div>
+            </div>
+            <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700 space-y-1">
+              <p>🔴 <strong>Brecha financiera (valor total): {R2.genero.brechaValorPct}%</strong> a favor de hombres sobre total M+F</p>
+              <p>🔴 <strong>Valor promedio por contrato: {R2.genero.brechaPromedioPct}% más alto en hombres</strong></p>
+              <p>⚡ <strong>Paradoja:</strong> las mujeres tienen más contratos (+14.8%) pero manejan menos valor (−31.7%).
+                Los contratos femeninos son de menor cuantía (servicios, consultoría pequeña); los masculinos
+                dominan contratos de mayor envergadura (obras, suministros, operaciones estratégicas).</p>
+            </div>
+          </div>
+        </div>
+      </QCard>
+
+      {/* P20 Anomalías tipos de datos */}
+      <QCard n="P20" title="Revisión de tipos de dato — mínimo 5 anomalías detectadas" color={COLOR_R2} light={LIGHT_R2}>
+        <div className="space-y-3">
+          {R2.anomaliasTipos.map((a, i) => (
+            <div key={i} className="flex gap-3 p-3 rounded-lg border border-slate-100 bg-slate-50">
+              <span className="w-5 h-5 flex items-center justify-center text-[9px] font-black text-white rounded-full shrink-0 mt-0.5"
+                style={{ background: COLOR_R2 }}>{i + 1}</span>
+              <div>
+                <p className="text-[10px] font-black text-slate-700 font-mono">{a.col}</p>
+                <p className="text-[10px] text-emerald-600">✓ Debería ser: <strong>{a.esperado}</strong></p>
+                <p className="text-[10px] text-red-500">✗ Problema actual: {a.problema}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </QCard>
+
+    </div>
+  );
+}
+
+// ─── PANEL API DOCS ────────────────────────────────────────────────────────
+
+const API_BASE = 'https://festivals-theaters-toolbox-equal.trycloudflare.com';
+
+function PanelAPI() {
+  const endpoints = [
+    {
+      method: 'GET', path: '/api/health',
+      desc: 'Estado del sistema: base de datos, Ollama, versión.',
+      example: `curl ${API_BASE}/api/health`,
+      response: '{"status":"ok","database":"connected","ollamaHost":"http://localhost:11434"}',
+    },
+    {
+      method: 'GET', path: '/api/secop/contracts?entity=CARDIQUE&limit=50',
+      desc: 'Contratos SECOP por entidad. Parámetros: entity (string), limit (1-100).',
+      example: `curl "${API_BASE}/api/secop/contracts?entity=CARDIQUE&limit=5"`,
+      response: '[{"id_contrato":"...","nombre_entidad":"...","valor_del_contrato":"..."}]',
+    },
+    {
+      method: 'POST', path: '/api/rag/legal-context',
+      desc: 'Obtiene contexto jurídico relevante (RAG sobre base de conocimiento legal colombiana).',
+      example: `curl -X POST ${API_BASE}/api/rag/legal-context \\\n  -H "Content-Type: application/json" \\\n  -d '{"query":"fraccionamiento contractual","redFlags":["mismo proveedor","corto plazo"]}'`,
+      response: '{"context":"Ley 80 de 1993, Art. 24..."}',
+    },
+    {
+      method: 'POST', path: '/api/chat/assistant',
+      desc: 'Chat IA: Claude Haiku → Gemini Flash → Ollama local. Responde preguntas sobre el sistema.',
+      example: `curl -X POST ${API_BASE}/api/chat/assistant \\\n  -H "Content-Type: application/json" \\\n  -d '{"systemPrompt":"Eres un auditor.","userMessage":"¿Qué es el RAG jurídico?","history":[]}'`,
+      response: '{"response":"El RAG jurídico...","provider":"ollama"}',
+    },
+    {
+      method: 'GET', path: '/api/secop/source?processId=<ID>',
+      desc: 'Obtiene el texto completo de una fuente SECOP por ID de proceso.',
+      example: `curl "${API_BASE}/api/secop/source?processId=CO1.PCCNTR.123456"`,
+      response: '{"url":"...","title":"...","excerpt":"...","bodyText":"..."}',
+    },
+    {
+      method: 'POST', path: '/api/cache/analysis',
+      desc: 'Almacena un análisis en caché persistente (PostgreSQL).',
+      example: `curl -X POST ${API_BASE}/api/cache/analysis \\\n  -d '{"groupKey":"entidad-ABC","data":{"riskScore":82}}'`,
+      response: '{"status":"ok"}',
+    },
+    {
+      method: 'GET', path: '/api/cache/analysis/:groupKey',
+      desc: 'Recupera un análisis almacenado en caché.',
+      example: `curl ${API_BASE}/api/cache/analysis/entidad-ABC`,
+      response: '{"riskScore":82}',
+    },
   ];
 
-  const active = tabs.find(t => t.id === activeDB)!;
+  const colors: Record<string, string> = { GET: '#059669', POST: '#2563eb', PUT: '#d97706', DELETE: '#dc2626' };
+
+  return (
+    <div className="space-y-5">
+
+      <div className="bg-white rounded-xl border border-slate-200 p-6">
+        <div className="flex items-start gap-4 mb-6">
+          <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-slate-800 shrink-0">
+            <Search className="w-6 h-6 text-white" />
+          </div>
+          <div>
+            <p className="text-xs font-black text-slate-400 uppercase tracking-widest">GobIA Auditor REST API</p>
+            <p className="text-xl font-black text-slate-800">Documentación de Endpoints</p>
+            <p className="text-xs text-slate-500 mt-1">Base URL: <code className="bg-slate-100 px-1.5 py-0.5 rounded text-slate-700">{API_BASE}</code></p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-3 mb-6">
+          {[
+            { k: 'Estado', v: '✅ Operativo', c: 'bg-emerald-50 text-emerald-700' },
+            { k: 'Autenticación', v: 'No requerida', c: 'bg-blue-50 text-blue-700' },
+            { k: 'Rate Limit', v: 'Sin límite (dev)', c: 'bg-slate-50 text-slate-600' },
+          ].map(s => (
+            <div key={s.k} className={`rounded-lg px-4 py-3 ${s.c}`}>
+              <p className="text-[9px] font-black uppercase">{s.k}</p>
+              <p className="text-sm font-black">{s.v}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="space-y-4">
+          {endpoints.map((ep, i) => (
+            <div key={i} className="rounded-lg border border-slate-200 overflow-hidden">
+              <div className="flex items-center gap-3 px-4 py-3 bg-slate-50 border-b border-slate-100">
+                <span className="text-[10px] font-black px-2 py-0.5 rounded text-white"
+                  style={{ background: colors[ep.method] || '#64748b' }}>{ep.method}</span>
+                <code className="text-xs font-mono text-slate-700 flex-1">{ep.path}</code>
+              </div>
+              <div className="px-4 py-3 space-y-2">
+                <p className="text-xs text-slate-600">{ep.desc}</p>
+                <div className="bg-slate-900 rounded-lg px-4 py-2.5">
+                  <p className="text-[9px] text-slate-500 uppercase font-bold mb-1">Ejemplo</p>
+                  <pre className="text-[10px] text-emerald-400 font-mono whitespace-pre-wrap">{ep.example}</pre>
+                </div>
+                <div className="bg-slate-100 rounded-lg px-4 py-2.5">
+                  <p className="text-[9px] text-slate-400 uppercase font-bold mb-1">Respuesta</p>
+                  <pre className="text-[10px] text-slate-600 font-mono">{ep.response}</pre>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl border border-slate-200 p-6">
+        <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">Fuentes de Datos — Hackathon</p>
+        <div className="space-y-2">
+          {[
+            { label: 'Reto 1 — Base 1 (DB1)', id: 'jbjy-vk9h', url: DB1.url, n: '5.6M registros, 84 vars' },
+            { label: 'Reto 1 — Base 2 (DB2)', id: 'dmgg-8hin', url: DB2.url, n: '17.3M registros, 84 vars' },
+            { label: 'Reto 2 — CSV 2026-05-06', id: 'CSV local', url: '', n: '1.003.902 registros, 84 vars' },
+          ].map(src => (
+            <div key={src.id} className="flex items-center gap-4 p-3 rounded-lg border border-slate-100 bg-slate-50">
+              <Database className="w-4 h-4 text-slate-400 shrink-0" />
+              <span className="text-xs font-black text-slate-700 w-48 shrink-0">{src.label}</span>
+              <code className="text-[10px] font-mono text-slate-400 flex-1">{src.id}</code>
+              <span className="text-[10px] text-slate-400">{src.n}</span>
+              {src.url && (
+                <a href={src.url} target="_blank" rel="noopener noreferrer">
+                  <ExternalLink className="w-3 h-3 text-slate-400 hover:text-slate-600" />
+                </a>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+    </div>
+  );
+}
+
+// ─── COMPONENTE PRINCIPAL ──────────────────────────────────────────────────
+
+export function SECOPAnalysis() {
+  const [activeTab, setActiveTab] = useState<'RETO1' | 'RETO2' | 'API'>('RETO1');
+  const [activeDB, setActiveDB] = useState<'DB1' | 'DB2'>('DB1');
+
+  const mainTabs = [
+    { id: 'RETO1' as const, label: 'Reto 1', sub: 'SECOP II — API Socrata', color: '#004884', badge: '2 Bases de Datos' },
+    { id: 'RETO2' as const, label: 'Reto 2', sub: 'CSV 2026-05-06',          color: '#7c3aed', badge: '1.003.902 registros' },
+    { id: 'API'   as const, label: 'API & Docs', sub: 'REST Endpoints',       color: '#0f172a', badge: '7 endpoints' },
+  ];
+
+  const db1Tabs = [
+    { id: 'DB1' as const, label: 'Base de Datos 1', sub: 'jbjy-vk9h', color: DB1.color },
+    { id: 'DB2' as const, label: 'Base de Datos 2', sub: 'dmgg-8hin', color: DB2.color },
+  ];
+
+  const activeMain = mainTabs.find(t => t.id === activeTab)!;
 
   return (
     <div className="min-h-screen bg-slate-100">
 
       {/* CABECERA INSTITUCIONAL */}
       <header className="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-50">
-        <div className="max-w-5xl mx-auto px-6 py-0">
+        <div className="max-w-6xl mx-auto px-6">
           <div className="flex items-center justify-between h-14">
             <div className="flex items-center gap-3">
               <div className="flex gap-0.5">
@@ -798,98 +1283,130 @@ export function SECOPAnalysis({ onFase2 }: { onFase2?: () => void } = {}) {
                 <div className="w-1 h-7 bg-[#D12C26] rounded-full" />
               </div>
               <div>
-                <p className="text-[9px] font-black tracking-widest text-slate-400 uppercase">Colombia · datos.gov.co</p>
-                <p className="text-sm font-black text-slate-800 leading-none">SECOP II — Análisis Estadístico</p>
+                <p className="text-[9px] font-black tracking-widest text-slate-400 uppercase">Hackathon Nacional COL 5.0 · GobIA Auditor</p>
+                <p className="text-sm font-black text-slate-800 leading-none">SECOP II — Análisis Estadístico Completo</p>
               </div>
             </div>
-            <div className="flex items-center gap-3">
-              <a href={active.dataset === DB1.id ? DB1.url : DB2.url}
+            <div className="flex items-center gap-2">
+              <span className="text-[9px] font-black px-2 py-1 rounded bg-emerald-100 text-emerald-700 uppercase tracking-wider">● API Activa</span>
+              <a href={`https://festivals-theaters-toolbox-equal.trycloudflare.com/api/health`}
                 target="_blank" rel="noopener noreferrer"
                 className="flex items-center gap-1.5 text-[10px] text-slate-400 hover:text-slate-600 transition-colors">
                 <ExternalLink className="w-3 h-3" />
-                {active.dataset}
+                Ver API
               </a>
-              {onFase2 && (
-                <button
-                  onClick={onFase2}
-                  className="px-3 py-1.5 text-[10px] font-black uppercase tracking-widest bg-[#004884] text-white hover:bg-[#003366] transition-colors rounded-none flex items-center gap-1.5"
-                >
-                  <Database className="w-3 h-3" />
-                  Fase 2 — Auditoría
-                </button>
-              )}
             </div>
           </div>
-        </div>
-      </header>
 
-      {/* SELECTOR DE BASE DE DATOS */}
-      <div className="bg-white border-b border-slate-200">
-        <div className="max-w-5xl mx-auto px-6">
-          <div className="flex gap-0">
-            {tabs.map(tab => (
+          {/* NAV PRINCIPAL */}
+          <div className="flex gap-0 -mb-px">
+            {mainTabs.map(tab => (
               <button
                 key={tab.id}
-                onClick={() => setActiveDB(tab.id)}
+                onClick={() => setActiveTab(tab.id)}
                 className={cn(
-                  'relative flex items-center gap-3 px-6 py-4 transition-all',
-                  activeDB === tab.id ? 'bg-white' : 'bg-slate-50 hover:bg-slate-100'
+                  'relative flex items-center gap-2 px-5 py-3 text-xs font-black uppercase tracking-wide transition-all border-b-2',
+                  activeTab === tab.id
+                    ? 'border-current bg-white'
+                    : 'border-transparent text-slate-400 hover:text-slate-600 bg-slate-50'
                 )}
+                style={activeTab === tab.id ? { color: tab.color, borderColor: tab.color } : {}}
               >
-                {/* Indicador superior */}
-                {activeDB === tab.id && (
-                  <motion.div layoutId="db-indicator"
-                    className="absolute inset-x-0 top-0 h-0.5 rounded-b"
-                    style={{ backgroundColor: tab.color }} />
-                )}
-                <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
-                  style={{
-                    backgroundColor: activeDB === tab.id ? tab.color : tab.color + '20',
-                    color: activeDB === tab.id ? 'white' : tab.color,
-                  }}>
-                  <Database className="w-4 h-4" />
-                </div>
-                <div className="text-left">
-                  <p className={cn('text-xs font-black uppercase tracking-wide',
-                    activeDB === tab.id ? 'text-slate-800' : 'text-slate-400')}
-                    style={activeDB === tab.id ? { color: tab.color } : {}}>
-                    {tab.label}
-                  </p>
-                  <p className="text-[10px] text-slate-400">{tab.sub}</p>
-                  <p className="text-[10px] font-mono text-slate-300">{tab.dataset}</p>
-                </div>
-                {activeDB === tab.id && (
-                  <div className="ml-2 px-2 py-0.5 rounded-full text-[9px] font-black text-white"
-                    style={{ backgroundColor: tab.color }}>
-                    {fmt(tab.total)} reg.
-                  </div>
-                )}
+                {tab.label}
+                <span className="hidden sm:inline text-[8px] font-normal opacity-60">— {tab.sub}</span>
+                <span className="ml-1 px-1.5 py-0.5 rounded-full text-[8px] font-black text-white"
+                  style={{ background: activeTab === tab.id ? tab.color : '#94a3b8' }}>
+                  {tab.badge}
+                </span>
               </button>
             ))}
           </div>
         </div>
-      </div>
+      </header>
 
       {/* CONTENIDO */}
-      <main className="max-w-5xl mx-auto px-6 py-8">
+      <main className="max-w-6xl mx-auto px-6 py-8">
         <AnimatePresence mode="wait">
-          {activeDB === 'DB1' ? (
-            <motion.div key="db1" initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }} transition={{ duration: 0.2 }}>
-              <PanelDB1 />
-            </motion.div>
-          ) : (
-            <motion.div key="db2" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} transition={{ duration: 0.2 }}>
-              <PanelDB2 />
+
+          {activeTab === 'RETO1' && (
+            <motion.div key="reto1" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.2 }}>
+
+              {/* Sub-selector DB1 / DB2 */}
+              <div className="bg-white rounded-xl border border-slate-200 mb-6 overflow-hidden">
+                <div className="flex">
+                  {db1Tabs.map(tab => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setActiveDB(tab.id)}
+                      className={cn(
+                        'relative flex items-center gap-3 px-6 py-4 flex-1 transition-all',
+                        activeDB === tab.id ? 'bg-white' : 'bg-slate-50 hover:bg-slate-100'
+                      )}
+                    >
+                      {activeDB === tab.id && (
+                        <motion.div layoutId="db-indicator"
+                          className="absolute inset-x-0 top-0 h-0.5"
+                          style={{ backgroundColor: tab.color }} />
+                      )}
+                      <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                        style={{ background: activeDB === tab.id ? tab.color : tab.color + '20', color: activeDB === tab.id ? 'white' : tab.color }}>
+                        <Database className="w-4 h-4" />
+                      </div>
+                      <div className="text-left">
+                        <p className="text-xs font-black uppercase" style={activeDB === tab.id ? { color: tab.color } : { color: '#94a3b8' }}>
+                          {tab.label}
+                        </p>
+                        <p className="text-[10px] font-mono text-slate-400">{tab.sub}</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <AnimatePresence mode="wait">
+                {activeDB === 'DB1' ? (
+                  <motion.div key="db1" initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 10 }} transition={{ duration: 0.2 }}>
+                    <PanelDB1 />
+                  </motion.div>
+                ) : (
+                  <motion.div key="db2" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -10 }} transition={{ duration: 0.2 }}>
+                    <PanelDB2 />
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </motion.div>
           )}
+
+          {activeTab === 'RETO2' && (
+            <motion.div key="reto2" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.2 }}>
+              <div className="bg-white rounded-xl border border-slate-200 px-6 py-4 mb-6 flex items-center gap-4">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: COLOR_R2 }}>
+                  <Database className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Reto 2 — Hackathon Nacional COL 5.0</p>
+                  <p className="text-sm font-black text-slate-800">{R2.archivo}</p>
+                  <p className="text-[10px] text-slate-400">{R2.tamanio} · {fmt(R2.totalRegistros)} registros · {R2.totalVariables} variables · Extraído 2026-05-06</p>
+                </div>
+              </div>
+              <PanelReto2 />
+            </motion.div>
+          )}
+
+          {activeTab === 'API' && (
+            <motion.div key="api" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.2 }}>
+              <PanelAPI />
+            </motion.div>
+          )}
+
         </AnimatePresence>
       </main>
 
       {/* FOOTER */}
       <footer className="border-t border-slate-200 bg-white mt-8">
-        <div className="max-w-5xl mx-auto px-6 py-5 flex items-center justify-between text-[10px] text-slate-400">
-          <span>Fuente: datos.gov.co · SECOP II · Consultado 2026-05-08</span>
-          <span>GobIA Auditor · Análisis Estadístico</span>
+        <div className="max-w-6xl mx-auto px-6 py-5 flex items-center justify-between text-[10px] text-slate-400">
+          <span>Fuente: datos.gov.co · SECOP II · Hackathon Nacional COL 5.0 · Consultado 2026-05-08</span>
+          <span>GobIA Auditor · Análisis Estadístico Rondas 1 y 2</span>
         </div>
       </footer>
     </div>
