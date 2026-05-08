@@ -194,6 +194,116 @@ export async function createApp() {
     res.json({ context });
   }));
 
+  // ── Chat assistant: Claude → Gemini → Ollama fallback chain ──────────────
+  app.post("/api/chat/assistant", asyncHandler(async (req, res) => {
+    const systemPrompt = requireString(req.body?.systemPrompt, "systemPrompt", 20000);
+    const userMessage = requireString(req.body?.userMessage, "userMessage", 4000);
+    const history: { role: string; content: string }[] = Array.isArray(req.body?.history)
+      ? req.body.history.slice(-8)
+      : [];
+
+    // 1. Try Anthropic Claude (fastest, highest quality)
+    if (config.anthropicApiKey) {
+      try {
+        const messages = [
+          ...history.map(m => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.content })),
+          { role: "user", content: userMessage },
+        ];
+        const response = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": config.anthropicApiKey,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: "claude-haiku-4-5-20251001",
+            max_tokens: 600,
+            system: systemPrompt,
+            messages,
+          }),
+          signal: AbortSignal.timeout(15000),
+        });
+
+        if (response.ok) {
+          const data = await response.json() as { content?: { text: string }[] };
+          const text = data?.content?.[0]?.text?.trim();
+          if (text) { res.json({ response: text, provider: "claude" }); return; }
+        }
+      } catch (err) {
+        console.warn("[CHAT] Claude API failed, trying Gemini", err);
+      }
+    }
+
+    // 2. Try Google Gemini Flash (fast + free tier)
+    if (config.geminiApiKey) {
+      try {
+        const contents = [
+          ...history.map(m => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] })),
+          { role: "user", parts: [{ text: userMessage }] },
+        ];
+        const response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${config.geminiApiKey}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              system_instruction: { parts: [{ text: systemPrompt }] },
+              contents,
+              generationConfig: { maxOutputTokens: 600, temperature: 0.3 },
+            }),
+            signal: AbortSignal.timeout(15000),
+          }
+        );
+
+        if (response.ok) {
+          const data = await response.json() as { candidates?: { content?: { parts?: { text: string }[] } }[] };
+          const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+          if (text) { res.json({ response: text, provider: "gemini" }); return; }
+        }
+      } catch (err) {
+        console.warn("[CHAT] Gemini API failed, trying Ollama", err);
+      }
+    }
+
+    // 3. Fallback to Ollama local
+    try {
+      const ollamaModels = ["qwen3:4b", "tinyllama:latest"];
+      const conversationText = [
+        ...history.map(m => `${m.role === "assistant" ? "Asistente" : "Usuario"}: ${m.content}`),
+        `Usuario: ${userMessage}`,
+        "Asistente:",
+      ].join("\n");
+
+      const prompt = `${systemPrompt}\n\n---\n${conversationText}`;
+      let ollamaText = "";
+
+      for (const model of ollamaModels) {
+        try {
+          const ollamaResp = await callOllama("generate", {
+            model,
+            prompt: `/no_think\n${prompt}`,
+            stream: false,
+            options: { num_predict: 500, temperature: 0.3 },
+          });
+          ollamaText = ((ollamaResp as { response?: string }).response || "").trim();
+          if (ollamaText) break;
+        } catch {
+          continue;
+        }
+      }
+
+      if (ollamaText) { res.json({ response: ollamaText, provider: "ollama" }); return; }
+    } catch (err) {
+      console.error("[CHAT] All providers failed", err);
+    }
+
+    res.json({
+      response: "Lo siento, ningún proveedor de IA está disponible ahora mismo. Verifica que Ollama esté corriendo, o configura ANTHROPIC_API_KEY / GEMINI_API_KEY en el archivo .env.",
+      provider: "none",
+    });
+  }));
+
   app.use("/api", (_req, _res, next) => {
     next(new HttpError(404, "API route not found"));
   });

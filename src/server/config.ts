@@ -14,6 +14,8 @@ export const config = {
   jsonLimit: process.env.JSON_LIMIT || "50mb",
   ollamaHost: process.env.OLLAMA_HOST || "http://localhost:11434",
   ollamaTimeoutMs: readInt("OLLAMA_TIMEOUT_MS", 180000),
+  anthropicApiKey: process.env.ANTHROPIC_API_KEY || "",
+  geminiApiKey: process.env.GEMINI_API_KEY || "",
   database: {
     host: process.env.DB_HOST || "localhost",
     user: process.env.DB_USER || "postgres",

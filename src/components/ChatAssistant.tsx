@@ -107,52 +107,43 @@ ${sessionContext}${expedientContext}
 Answer in English. Be precise, concise, and forensics-oriented.`;
 }
 
-async function callOllamaChat(systemPrompt: string, messages: Message[], lang: 'ES' | 'EN'): Promise<string> {
-  const history = messages.slice(-6).map(m => ({
-    role: m.role === 'assistant' ? 'assistant' : 'user',
-    content: m.content,
-  }));
+const PROVIDER_LABELS: Record<string, string> = {
+  claude: 'Claude Haiku',
+  gemini: 'Gemini Flash',
+  ollama: 'Ollama local',
+  none: 'Sin proveedor',
+};
 
-  const fullPrompt = `${systemPrompt}\n\n---\n${history.map(m => `${m.role === 'user' ? 'Usuario' : 'Asistente'}: ${m.content}`).join('\n')}\nAsistente:`;
+async function callChatAssistant(
+  systemPrompt: string,
+  messages: Message[],
+  lang: 'ES' | 'EN'
+): Promise<{ text: string; provider: string }> {
+  const history = messages
+    .filter(m => m.id !== 'greeting')
+    .slice(-8)
+    .map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content }));
+
+  const userMessage = messages[messages.length - 1]?.content || '';
 
   try {
-    const resp = await fetch('/api/ollama/generate', {
+    const resp = await fetch('/api/chat/assistant', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'qwen3:4b',
-        prompt: fullPrompt,
-        stream: false,
-        options: { temperature: 0.3, num_predict: 400 },
-      }),
-      signal: AbortSignal.timeout(45000),
+      body: JSON.stringify({ systemPrompt, userMessage, history }),
+      signal: AbortSignal.timeout(20000),
     });
 
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const data = await resp.json();
-    return (data.response || '').trim();
+    const data = await resp.json() as { response: string; provider: string };
+    return { text: data.response?.trim() || '', provider: data.provider || 'none' };
   } catch {
-    // Fallback to tinyllama
-    try {
-      const resp2 = await fetch('/api/ollama/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'tinyllama',
-          prompt: `${messages[messages.length - 1]?.content || ''}`,
-          stream: false,
-          options: { num_predict: 200 },
-        }),
-        signal: AbortSignal.timeout(20000),
-      });
-      if (!resp2.ok) throw new Error('tinyllama failed');
-      const data2 = await resp2.json();
-      return (data2.response || '').trim();
-    } catch {
-      return lang === 'ES'
-        ? 'Lo siento, el modelo de IA no está disponible en este momento. Verifica que Ollama esté corriendo (`ollama serve`) y que el modelo qwen3:4b esté descargado (`ollama pull qwen3:4b`).'
-        : 'Sorry, the AI model is currently unavailable. Check that Ollama is running (`ollama serve`) and that qwen3:4b is downloaded.';
-    }
+    return {
+      text: lang === 'ES'
+        ? 'Lo siento, el servicio de chat no está disponible. Verifica que el servidor esté corriendo (`npm start`) y que al menos Ollama esté activo (`ollama serve`).'
+        : 'Sorry, the chat service is unavailable. Check the server is running (`npm start`) and Ollama is active (`ollama serve`).',
+      provider: 'none',
+    };
   }
 }
 
@@ -162,6 +153,7 @@ export function ChatAssistant({ lang, results, selectedResult, entitySearch }: P
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [minimized, setMinimized] = useState(false);
+  const [activeProvider, setActiveProvider] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const isEs = lang === 'ES';
@@ -186,8 +178,8 @@ export function ChatAssistant({ lang, results, selectedResult, entitySearch }: P
     }
   }, [messages, open, minimized]);
 
-  async function handleSend(text?: string) {
-    const content = (text || input).trim();
+  async function handleSend(quickText?: string) {
+    const content = (quickText || input).trim();
     if (!content || loading) return;
 
     const userMsg: Message = { id: Date.now().toString(), role: 'user', content, timestamp: new Date() };
@@ -197,12 +189,13 @@ export function ChatAssistant({ lang, results, selectedResult, entitySearch }: P
     setLoading(true);
 
     const systemPrompt = buildSystemContext(results, selectedResult, entitySearch, lang);
-    const response = await callOllamaChat(systemPrompt, updatedMessages, lang);
+    const { text, provider } = await callChatAssistant(systemPrompt, updatedMessages, lang);
+    setActiveProvider(provider);
 
     const assistantMsg: Message = {
       id: (Date.now() + 1).toString(),
       role: 'assistant',
-      content: response || (isEs ? 'Sin respuesta del modelo.' : 'No response from model.'),
+      content: text || (isEs ? 'Sin respuesta del modelo.' : 'No response from model.'),
       timestamp: new Date(),
     };
     setMessages(prev => [...prev, assistantMsg]);
@@ -265,7 +258,9 @@ export function ChatAssistant({ lang, results, selectedResult, entitySearch }: P
                 </div>
                 <div className="text-xs text-emerald-400 flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
-                  {isEs ? 'GobIA Auditor · IA local' : 'GobIA Auditor · Local AI'}
+                  {activeProvider
+                    ? `${PROVIDER_LABELS[activeProvider] ?? activeProvider}`
+                    : isEs ? 'Claude · Gemini · Ollama' : 'Claude · Gemini · Ollama'}
                 </div>
               </div>
               <div className="flex items-center gap-1">
@@ -362,7 +357,7 @@ export function ChatAssistant({ lang, results, selectedResult, entitySearch }: P
                         {quickQuestions.slice(0, 4).map(q => (
                           <button
                             key={q}
-                            onClick={() => handleSend(q)}
+                            onClick={() => handleSend(q as string)}
                             className="text-[10px] px-2.5 py-1 rounded-full bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 hover:text-white transition-colors text-left"
                           >
                             {q}
@@ -395,7 +390,7 @@ export function ChatAssistant({ lang, results, selectedResult, entitySearch }: P
                       </button>
                     </form>
                     <p className="text-[9px] text-slate-600 mt-1.5 text-center">
-                      {isEs ? 'Powered by Ollama · IA completamente local' : 'Powered by Ollama · Fully local AI'}
+                      Claude Haiku · Gemini Flash · Ollama local
                     </p>
                   </div>
                 </motion.div>
