@@ -1,32 +1,21 @@
 /**
  * SECOP II — Contratos Electrónicos
- * Dashboard de análisis estadístico — Preguntas 3-14
- * Dataset: https://www.datos.gov.co/resource/jbjy-vk9h.json
+ * Dashboard estadístico — Preguntas 3 a 14
+ * Dataset ID: jbjy-vk9h · datos.gov.co
  */
 
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, Legend, LineChart, Line, ReferenceLine,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, Cell, PieChart, Pie,
 } from 'recharts';
-import {
-  Database, Calendar, Hash, Type, AlertTriangle, TrendingUp,
-  Award, FileText, BarChart2, Clock, DollarSign, Activity,
-  ChevronDown, ChevronUp, ExternalLink, Info,
-} from 'lucide-react';
+import { ChevronDown, ChevronUp, ExternalLink, AlertTriangle, Info } from 'lucide-react';
 import { cn } from '../lib/utils';
 
-// ─── DATA ──────────────────────────────────────────────────────────────────
+// ─── CONSTANTES ────────────────────────────────────────────────────────────
 
-const DATASET_META = {
-  nombre: 'SECOP II — Contratos Electrónicos',
-  url: 'https://www.datos.gov.co/Estad-sticas-Nacionales/SECOP-II-Contratos-Electr-nicos/jbjy-vk9h',
-  id: 'jbjy-vk9h',
-  totalRegistros: 5614448,
-  totalVariables: 84,
-  fechaConsulta: '2026-05-08',
-};
+const TOTAL_REGISTROS = 5_614_448;
 
 const DATE_VARS = [
   'Fecha de Firma',
@@ -70,561 +59,570 @@ const TEXT_VARS = [
   'Número de documento supervisor', 'Documentos Tipo', 'Descripcion Documentos Tipo',
 ];
 
-const NULL_DATA = [
-  { variable: 'Fecha Fin Liquidacion', nulos: 5004452, pct: 89.15, color: '#D12C26' },
-  { variable: 'Fecha Inicio Liquidacion', nulos: 5004413, pct: 89.15, color: '#D12C26' },
-  { variable: 'F. Inicio Contrato', nulos: 423262, pct: 7.54, color: '#F59E0B' },
-  { variable: 'Fecha de Firma', nulos: 402830, pct: 7.17, color: '#F59E0B' },
-  { variable: 'F. Fin Contrato', nulos: 53755, pct: 0.96, color: '#10B981' },
-  { variable: 'Valor del Contrato', nulos: 0, pct: 0, color: '#10B981' },
-  { variable: 'Proveedor Adjudicado', nulos: 0, pct: 0, color: '#10B981' },
+const NULL_VARS = [
+  { name: 'Fecha Fin Liquidacion',     nulos: 5_004_452, pct: 89.15 },
+  { name: 'Fecha Inicio Liquidacion',  nulos: 5_004_413, pct: 89.15 },
+  { name: 'F. Inicio del Contrato',    nulos:   423_262, pct:  7.54 },
+  { name: 'Fecha de Firma',            nulos:   402_830, pct:  7.17 },
+  { name: 'F. Fin del Contrato',       nulos:    53_755, pct:  0.96 },
+  { name: 'Proveedor Adjudicado',      nulos:         0, pct:  0.00 },
+  { name: 'Valor del Contrato',        nulos:         0, pct:  0.00 },
 ];
 
-const TYPE_PIE = [
-  { name: 'Texto', value: 54, color: '#004884' },
-  { name: 'Numérico', value: 19, color: '#FCD059' },
-  { name: 'Fecha', value: 7, color: '#D12C26' },
-  { name: 'Otro', value: 4, color: '#94A3B8' },
-];
-
-const TOP7_VALUES = [
-  { rank: 1, valor: 9974265138436 },
-  { rank: 2, valor: 9948132332356 },
-  { rank: 3, valor: 9947716000000 },
-  { rank: 4, valor: 9922500000000 },
-  { rank: 5, valor: 9922500000000 },
-  { rank: 6, valor: 9653449000000 },
-  { rank: 7, valor: 9645115773936 },
+const TOP7 = [
+  { rank: 1, valor: 9_974_265_138_436 },
+  { rank: 2, valor: 9_948_132_332_356 },
+  { rank: 3, valor: 9_947_716_000_000 },
+  { rank: 4, valor: 9_922_500_000_000 },
+  { rank: 5, valor: 9_922_500_000_000 },
+  { rank: 6, valor: 9_653_449_000_000 },
+  { rank: 7, valor: 9_645_115_773_936 },
 ];
 
 // ─── HELPERS ───────────────────────────────────────────────────────────────
 
-function fmtNum(n: number) {
-  return n.toLocaleString('es-CO');
-}
+const fmt = (n: number) => n.toLocaleString('es-CO');
 
-function fmtCOP(n: number) {
-  if (n >= 1e12) return `$${(n / 1e12).toFixed(2)} B`;
-  if (n >= 1e9) return `$${(n / 1e9).toFixed(2)} MM`;
-  return `$${n.toLocaleString('es-CO')}`;
-}
+const fmtCOP = (n: number) => {
+  if (n >= 1e12) return `$${(n / 1e12).toFixed(3).replace('.', ',')} billones`;
+  if (n >= 1e9)  return `$${(n / 1e9).toFixed(2)} mil millones`;
+  return `$${fmt(n)}`;
+};
 
-const fadeUp = { hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0 } };
+// ─── BUILDING BLOCKS ───────────────────────────────────────────────────────
 
-// ─── SUB-COMPONENTS ────────────────────────────────────────────────────────
-
-function Badge({ label, q }: { label: string; q: string }) {
-  return (
-    <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-[#004884]/10 border border-[#004884]/20">
-      <span className="text-[9px] font-black text-[#004884] uppercase tracking-wider">{q}</span>
-      <span className="text-[9px] text-gray-500">{label}</span>
-    </div>
-  );
-}
-
-function QuestionCard({
-  q, title, children, className,
+/** Tarjeta de pregunta con enunciado obligatorio */
+function QCard({
+  n, enunciado, children,
 }: {
-  q: string; title: string; children: React.ReactNode; className?: string;
+  n: number;
+  enunciado: string;
+  children: React.ReactNode;
 }) {
   return (
-    <motion.div
-      variants={fadeUp}
-      className={cn('bg-white border border-[#E6E6E6] overflow-hidden', className)}
+    <motion.article
+      initial={{ opacity: 0, y: 18 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: '-40px' }}
+      transition={{ duration: 0.35 }}
+      className="bg-white border border-[#E0E7EF] shadow-sm overflow-hidden"
     >
-      <div className="flex items-center gap-3 px-5 py-3 border-b border-[#F2F2F2] bg-[#004884]">
-        <span className="text-[10px] font-black text-[#FCD059] uppercase tracking-widest">{q}</span>
-        <span className="text-xs font-bold text-white/90">{title}</span>
-      </div>
-      <div className="p-5">{children}</div>
-    </motion.div>
+      {/* Header con número + enunciado */}
+      <header className="flex items-start gap-4 px-6 py-4 border-b border-[#E0E7EF] bg-[#F8FAFD]">
+        <div className="shrink-0 w-9 h-9 rounded-full bg-[#004884] flex items-center justify-center mt-0.5">
+          <span className="text-xs font-black text-white leading-none">{n}</span>
+        </div>
+        <p className="text-sm font-semibold text-[#1A2942] leading-snug">{enunciado}</p>
+      </header>
+      {/* Respuesta */}
+      <div className="px-6 py-6">{children}</div>
+    </motion.article>
   );
 }
 
-function StatBig({ value, sub, color = '#004884' }: { value: string; sub?: string; color?: string }) {
-  return (
-    <div>
-      <div className="text-5xl font-black tabular-nums leading-none" style={{ color }}>{value}</div>
-      {sub && <div className="text-xs text-gray-400 mt-1 font-medium">{sub}</div>}
-    </div>
-  );
-}
-
-function VarList({ items, color }: { items: string[]; color: string }) {
+/** Lista expandible de chips */
+function ChipList({
+  items,
+  color,
+  initialVisible = 12,
+}: {
+  items: string[];
+  color: string;
+  initialVisible?: number;
+}) {
   const [expanded, setExpanded] = useState(false);
-  const visible = expanded ? items : items.slice(0, 8);
+  const visible = expanded ? items : items.slice(0, initialVisible);
   return (
     <div>
       <div className="flex flex-wrap gap-1.5">
         {visible.map(v => (
-          <span key={v} className="text-[10px] px-2 py-0.5 rounded font-medium border" style={{ borderColor: color + '33', color, backgroundColor: color + '0d' }}>
+          <span
+            key={v}
+            className="text-[11px] font-medium px-2.5 py-1 rounded-full border"
+            style={{ color, borderColor: color + '40', backgroundColor: color + '0d' }}
+          >
             {v}
           </span>
         ))}
       </div>
-      {items.length > 8 && (
+      {items.length > initialVisible && (
         <button
           onClick={() => setExpanded(e => !e)}
-          className="mt-2 text-[10px] text-gray-400 hover:text-gray-700 flex items-center gap-1 transition-colors"
+          className="mt-3 flex items-center gap-1.5 text-xs font-semibold text-gray-400 hover:text-gray-700 transition-colors"
         >
-          {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-          {expanded ? 'Ver menos' : `Ver ${items.length - 8} más`}
+          {expanded
+            ? <><ChevronUp className="w-3.5 h-3.5" /> Mostrar menos</>
+            : <><ChevronDown className="w-3.5 h-3.5" /> Ver {items.length - initialVisible} más</>}
         </button>
       )}
     </div>
   );
 }
 
-const CustomNullTooltip = ({ active, payload }: any) => {
+/** Número grande de respuesta */
+function BigAnswer({
+  value,
+  unit,
+  note,
+  color = '#004884',
+}: {
+  value: string;
+  unit?: string;
+  note?: string;
+  color?: string;
+}) {
+  return (
+    <div className="flex items-end gap-3 flex-wrap">
+      <span className="text-6xl font-black tabular-nums leading-none" style={{ color }}>
+        {value}
+      </span>
+      {unit && (
+        <span className="text-base font-semibold text-gray-400 pb-1.5">{unit}</span>
+      )}
+      {note && (
+        <span className="w-full text-xs text-gray-400 mt-1">{note}</span>
+      )}
+    </div>
+  );
+}
+
+/** Barra de porcentaje simple */
+function PctBar({ pct, color }: { pct: number; color: string }) {
+  return (
+    <div className="flex items-center gap-3">
+      <div className="flex-1 h-2.5 bg-gray-100 rounded-full overflow-hidden">
+        <motion.div
+          initial={{ width: 0 }}
+          whileInView={{ width: `${pct}%` }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.8, ease: 'easeOut' }}
+          className="h-full rounded-full"
+          style={{ backgroundColor: color }}
+        />
+      </div>
+      <span className="text-sm font-black tabular-nums w-14 text-right" style={{ color }}>{pct.toFixed(2)}%</span>
+    </div>
+  );
+}
+
+// Tooltip custom para el bar chart de nulos
+const NullTooltip = ({ active, payload }: any) => {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   return (
-    <div className="bg-white border border-gray-200 shadow-lg rounded-lg p-3 text-xs space-y-1">
-      <div className="font-bold text-gray-800">{d.variable}</div>
-      <div className="text-gray-500">Nulos: <span className="font-semibold text-gray-800">{fmtNum(d.nulos)}</span></div>
-      <div className="text-gray-500">Porcentaje: <span className="font-semibold" style={{ color: d.color }}>{d.pct.toFixed(2)}%</span></div>
+    <div className="bg-white border border-gray-200 shadow-xl rounded-lg p-3 text-xs space-y-0.5">
+      <p className="font-bold text-gray-800">{d.name}</p>
+      <p className="text-gray-500">Nulos: <strong>{fmt(d.nulos)}</strong></p>
+      <p className="text-gray-500">Porcentaje: <strong>{d.pct.toFixed(2)}%</strong></p>
     </div>
   );
 };
 
-const CustomValueTooltip = ({ active, payload }: any) => {
-  if (!active || !payload?.length) return null;
-  const d = payload[0].payload;
-  return (
-    <div className="bg-white border border-gray-200 shadow-lg rounded-lg p-3 text-xs space-y-1">
-      <div className="font-bold text-gray-800">Rank #{d.rank}</div>
-      <div className="text-gray-500">Valor: <span className="font-semibold text-[#004884]">{fmtCOP(d.valor)}</span></div>
-      <div className="text-gray-400 font-mono text-[10px]">${fmtNum(d.valor)} COP</div>
-    </div>
-  );
-};
-
-// ─── MAIN COMPONENT ────────────────────────────────────────────────────────
+// ─── DASHBOARD ─────────────────────────────────────────────────────────────
 
 export function SECOPDashboard() {
   return (
-    <div className="min-h-screen bg-[#F5F7FA] font-sans">
+    <div className="min-h-screen bg-[#F2F5F9]">
 
-      {/* ── HEADER ── */}
-      <header className="bg-[#004884] text-white">
-        <div className="max-w-7xl mx-auto px-8 py-6">
-          <div className="flex items-start justify-between flex-wrap gap-4">
-            <div>
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-1 h-8 bg-[#FCD059]" />
-                <div className="w-1 h-8 bg-white/60" />
-                <div className="w-1 h-8 bg-[#D12C26]" />
-                <span className="text-[10px] font-black tracking-widest text-white/60 ml-1">COLOMBIA COMPRA EFICIENTE</span>
-              </div>
-              <h1 className="text-3xl font-black uppercase tracking-tight leading-none">
-                SECOP II — Contratos Electrónicos
-              </h1>
-              <p className="text-sm text-white/60 mt-1">Análisis estadístico descriptivo del dataset público · Preguntas 3–14</p>
-            </div>
-            <div className="flex flex-col items-end gap-2">
-              <a
-                href={DATASET_META.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1.5 text-[10px] text-white/50 hover:text-white/80 transition-colors"
-              >
-                <ExternalLink className="w-3 h-3" />
-                datos.gov.co / {DATASET_META.id}
-              </a>
-              <div className="text-[10px] text-white/40">Fecha de consulta: {DATASET_META.fechaConsulta}</div>
+      {/* ── CABECERA ── */}
+      <div className="bg-[#004884] text-white">
+        <div className="h-1 bg-gradient-to-r from-[#FCD059] via-white/20 to-[#D12C26]" />
+        <div className="max-w-5xl mx-auto px-8 py-8 flex items-start justify-between gap-6 flex-wrap">
+          <div>
+            <p className="text-[10px] font-black tracking-[0.2em] text-[#FCD059] uppercase mb-2">
+              BASE DE DATOS 1
+            </p>
+            <h1 className="text-2xl font-black uppercase leading-tight">
+              SECOP II — Contratos Electrónicos
+            </h1>
+            <p className="text-sm text-white/50 mt-1">
+              Análisis estadístico descriptivo · Preguntas 3 a 14
+            </p>
+          </div>
+          <a
+            href="https://www.datos.gov.co/Estad-sticas-Nacionales/SECOP-II-Contratos-Electr-nicos/jbjy-vk9h"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 text-[11px] text-white/40 hover:text-white/70 transition-colors self-end"
+          >
+            <ExternalLink className="w-3 h-3" />
+            datos.gov.co · jbjy-vk9h
+          </a>
+        </div>
+      </div>
+
+      {/* ── PREGUNTAS ── */}
+      <div className="max-w-5xl mx-auto px-8 py-10 space-y-6">
+
+        {/* ── P3 ── */}
+        <QCard
+          n={3}
+          enunciado="¿Cual es la cantidad total de registros de la base de datos?"
+        >
+          <BigAnswer
+            value={fmt(TOTAL_REGISTROS)}
+            unit="registros"
+            note="Contratos electrónicos registrados en SECOP II desde junio de 2015."
+          />
+        </QCard>
+
+        {/* ── P4 ── */}
+        <QCard
+          n={4}
+          enunciado="¿Cual es la cantidad total de variables de la base de datos?"
+        >
+          <div className="flex items-end gap-8 flex-wrap">
+            <BigAnswer value="84" unit="variables" />
+            <div className="flex flex-col gap-2 pb-1">
+              {[
+                { label: 'Texto',    count: 54, color: '#004884' },
+                { label: 'Numérico', count: 19, color: '#10B981' },
+                { label: 'Fecha',    count:  7, color: '#D12C26' },
+                { label: 'Otro',     count:  4, color: '#94A3B8' },
+              ].map(t => (
+                <div key={t.label} className="flex items-center gap-2 text-xs">
+                  <span
+                    className="w-2.5 h-2.5 rounded-full shrink-0"
+                    style={{ backgroundColor: t.color }}
+                  />
+                  <span className="text-gray-500 w-16">{t.label}</span>
+                  <span className="font-black" style={{ color: t.color }}>{t.count}</span>
+                </div>
+              ))}
             </div>
           </div>
-        </div>
-        {/* Accent bar */}
-        <div className="h-1 w-full bg-gradient-to-r from-[#FCD059] via-[#004884] to-[#D12C26]" />
-      </header>
+        </QCard>
 
-      <div className="max-w-7xl mx-auto px-8 py-8">
-
-        {/* ── KPI HERO ROW ── */}
-        <motion.div
-          initial="hidden"
-          animate="show"
-          variants={{ show: { transition: { staggerChildren: 0.07 } } }}
-          className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8"
+        {/* ── P5 ── */}
+        <QCard
+          n={5}
+          enunciado="¿Cuántas y cuales variables de tipo fecha existen?"
         >
-          {[
-            { label: 'Total de Registros', value: fmtNum(DATASET_META.totalRegistros), icon: Database, color: '#004884', sub: 'Pregunta 3', accent: '#004884' },
-            { label: 'Total de Variables', value: String(DATASET_META.totalVariables), icon: BarChart2, color: '#D12C26', sub: 'Pregunta 4', accent: '#D12C26' },
-            { label: 'Máx. Días Adicionados', value: fmtNum(730533), icon: Clock, color: '#F59E0B', sub: 'Pregunta 11 · ~2.001 años', accent: '#F59E0B' },
-            { label: 'Máx. Valor Contrato', value: '$9,97 B', icon: DollarSign, color: '#10B981', sub: 'Pregunta 12 · Billones COP', accent: '#10B981' },
-          ].map(kpi => (
-            <motion.div key={kpi.label} variants={fadeUp} className="bg-white border border-[#E6E6E6] p-5 flex flex-col gap-3">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black uppercase tracking-wider text-gray-400">{kpi.label}</span>
-                <div className="w-8 h-8 flex items-center justify-center rounded" style={{ backgroundColor: kpi.accent + '15' }}>
-                  <kpi.icon className="w-4 h-4" style={{ color: kpi.accent }} />
-                </div>
+          <div className="mb-4">
+            <BigAnswer value={String(DATE_VARS.length)} unit="variables de tipo fecha" color="#D12C26" />
+          </div>
+          <div className="flex flex-col gap-2.5">
+            {DATE_VARS.map((v, i) => (
+              <div key={v} className="flex items-center gap-3">
+                <span className="w-6 h-6 rounded-full bg-[#D12C26]/10 border border-[#D12C26]/30 flex items-center justify-center text-[10px] font-black text-[#D12C26] shrink-0">
+                  {i + 1}
+                </span>
+                <span className="text-sm font-medium text-gray-700">{v}</span>
               </div>
-              <div className="text-3xl font-black tabular-nums leading-none" style={{ color: kpi.color }}>{kpi.value}</div>
-              <div className="text-[10px] text-gray-400 font-medium">{kpi.sub}</div>
-            </motion.div>
-          ))}
-        </motion.div>
+            ))}
+          </div>
+        </QCard>
 
-        {/* ── ROW 1: Estructura de variables ── */}
-        <motion.div
-          initial="hidden" animate="show"
-          variants={{ show: { transition: { staggerChildren: 0.08 } } }}
-          className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4"
+        {/* ── P6 ── */}
+        <QCard
+          n={6}
+          enunciado="¿Cuántas y cuales variables de tipo numérico existen?"
         >
-          {/* Distribución por tipo — Pie */}
-          <QuestionCard q="P4" title="Distribución de variables por tipo" className="lg:col-span-1">
-            <div className="flex items-center justify-center">
-              <PieChart width={220} height={220}>
-                <Pie
-                  data={TYPE_PIE}
-                  cx={110} cy={100}
-                  innerRadius={55} outerRadius={90}
-                  paddingAngle={3}
-                  dataKey="value"
-                  label={({ name, value }) => `${value}`}
-                  labelLine={false}
-                >
-                  {TYPE_PIE.map(entry => (
-                    <Cell key={entry.name} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Legend
-                  iconType="circle"
-                  iconSize={8}
-                  formatter={(v, entry: any) => (
-                    <span className="text-xs text-gray-600">{v} <strong>({entry.payload.value})</strong></span>
-                  )}
-                />
-                <Tooltip formatter={(v: any) => [v, 'Variables']} />
-              </PieChart>
-            </div>
-            <div className="grid grid-cols-3 gap-2 mt-2">
-              {TYPE_PIE.slice(0, 3).map(t => (
-                <div key={t.name} className="text-center p-2 rounded" style={{ backgroundColor: t.color + '10' }}>
-                  <div className="text-xl font-black" style={{ color: t.color }}>{t.value}</div>
-                  <div className="text-[9px] text-gray-500 font-semibold uppercase">{t.name}</div>
-                </div>
-              ))}
-            </div>
-          </QuestionCard>
+          <div className="mb-4">
+            <BigAnswer value={String(NUMERIC_VARS.length)} unit="variables de tipo numérico" color="#10B981" />
+          </div>
+          <ChipList items={NUMERIC_VARS} color="#10B981" initialVisible={19} />
+        </QCard>
 
-          {/* Variables de fecha */}
-          <QuestionCard q="P5" title={`Variables de tipo Fecha (${DATE_VARS.length})`} className="lg:col-span-1">
-            <div className="flex flex-col gap-2">
-              {DATE_VARS.map((v, i) => (
-                <div key={v} className="flex items-center gap-3">
-                  <div className="w-5 h-5 rounded-full bg-[#D12C26] flex items-center justify-center shrink-0">
-                    <span className="text-[9px] font-black text-white">{i + 1}</span>
-                  </div>
-                  <div className="flex-1">
-                    <div className="text-xs font-semibold text-gray-700">{v}</div>
-                  </div>
-                  <Calendar className="w-3 h-3 text-[#D12C26] shrink-0" />
-                </div>
-              ))}
-            </div>
-            <div className="mt-4 p-3 bg-[#D12C26]/5 border border-[#D12C26]/20 rounded">
-              <p className="text-[10px] text-[#D12C26] font-semibold">
-                Nota: Las variables de liquidación concentran el 89,15% de nulos en el dataset, indicando que la mayoría de contratos aún no han completado su ciclo de liquidación.
+        {/* ── P7 ── */}
+        <QCard
+          n={7}
+          enunciado="¿Cuántas y cuales variables de tipo texto existen?"
+        >
+          <div className="mb-4">
+            <BigAnswer value={String(TEXT_VARS.length)} unit="variables de tipo texto" color="#004884" />
+          </div>
+          <ChipList items={TEXT_VARS} color="#004884" initialVisible={16} />
+        </QCard>
+
+        {/* ── P8 ── */}
+        <QCard
+          n={8}
+          enunciado="¿Qué variable tiene la mayor cantidad de registros nulos?"
+        >
+          {/* Respuesta destacada */}
+          <div className="mb-6 p-4 border-l-4 border-[#D12C26] bg-[#FEF2F2]">
+            <p className="text-[10px] font-black uppercase tracking-wider text-[#D12C26] mb-1">Respuesta</p>
+            <p className="text-xl font-black text-[#991B1B]">Fecha Fin Liquidacion</p>
+            <p className="text-sm text-[#DC2626] mt-0.5">
+              {fmt(5_004_452)} registros nulos · 89.15% del total
+            </p>
+          </div>
+
+          {/* Bar chart comparativo */}
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-3">
+            Comparativa de nulos en variables clave
+          </p>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart
+              data={NULL_VARS}
+              margin={{ top: 4, right: 16, left: 16, bottom: 48 }}
+              barSize={32}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="#F0F4F8" vertical={false} />
+              <XAxis
+                dataKey="name"
+                tick={{ fontSize: 9, fill: '#6B7280' }}
+                angle={-30}
+                textAnchor="end"
+                interval={0}
+                height={56}
+              />
+              <YAxis
+                tickFormatter={v =>
+                  v >= 1e6 ? `${(v / 1e6).toFixed(1)}M`
+                  : v >= 1e3 ? `${(v / 1e3).toFixed(0)}K`
+                  : String(v)
+                }
+                tick={{ fontSize: 9, fill: '#6B7280' }}
+                width={42}
+              />
+              <Tooltip content={<NullTooltip />} />
+              <Bar dataKey="nulos" radius={[3, 3, 0, 0]}>
+                {NULL_VARS.map((d, i) => (
+                  <Cell
+                    key={i}
+                    fill={d.pct >= 80 ? '#D12C26' : d.pct >= 5 ? '#F59E0B' : '#10B981'}
+                  />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </QCard>
+
+        {/* ── P9 ── */}
+        <QCard
+          n={9}
+          enunciado="¿Qué porcentaje de registros nulos tiene la variable Fecha de Firma?"
+        >
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
+            {/* Número grande */}
+            <div>
+              <BigAnswer value="7.17" unit="%" color="#F59E0B" />
+              <p className="text-xs text-gray-400 mt-3">
+                {fmt(402_830)} registros nulos
+                <span className="mx-2 text-gray-300">·</span>
+                de {fmt(TOTAL_REGISTROS)} totales
               </p>
             </div>
-          </QuestionCard>
-
-          {/* Variables numéricas */}
-          <QuestionCard q="P6" title={`Variables de tipo Numérico (${NUMERIC_VARS.length})`} className="lg:col-span-1">
-            <VarList items={NUMERIC_VARS} color="#10B981" />
-            <div className="mt-4 grid grid-cols-2 gap-2">
-              <div className="bg-emerald-50 border border-emerald-200 p-3 rounded text-center">
-                <div className="text-lg font-black text-emerald-700">19</div>
-                <div className="text-[9px] text-emerald-600 uppercase font-semibold">Variables numéricas</div>
-              </div>
-              <div className="bg-emerald-50 border border-emerald-200 p-3 rounded text-center">
-                <div className="text-lg font-black text-emerald-700">22.6%</div>
-                <div className="text-[9px] text-emerald-600 uppercase font-semibold">Del total (84)</div>
-              </div>
-            </div>
-          </QuestionCard>
-        </motion.div>
-
-        {/* Variables de texto — full width */}
-        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="mb-4">
-          <QuestionCard q="P7" title={`Variables de tipo Texto (${TEXT_VARS.length})`}>
-            <VarList items={TEXT_VARS} color="#004884" />
-            <div className="mt-4 flex gap-6 text-xs text-gray-500">
-              <span><strong className="text-[#004884]">64.3%</strong> del total de variables son tipo texto</span>
-              <span><strong className="text-[#004884]">54</strong> variables capturan información descriptiva, administrativa y de partes del contrato</span>
-            </div>
-          </QuestionCard>
-        </motion.div>
-
-        {/* ── ROW 2: Análisis de nulos ── */}
-        <motion.div
-          initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}
-          className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4"
-        >
-          {/* Bar chart nulos */}
-          <QuestionCard q="P8 · P9 · P10" title="Análisis de valores nulos por variable clave" className="lg:col-span-2">
-            <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={NULL_DATA} margin={{ left: 10, right: 20, top: 5, bottom: 40 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#F0F0F0" />
-                <XAxis
-                  dataKey="variable"
-                  tick={{ fontSize: 9, fill: '#6B7280' }}
-                  angle={-28}
-                  textAnchor="end"
-                  interval={0}
-                  height={60}
-                />
-                <YAxis
-                  tickFormatter={v => v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : v >= 1e3 ? `${(v / 1e3).toFixed(0)}K` : String(v)}
-                  tick={{ fontSize: 9, fill: '#6B7280' }}
-                />
-                <Tooltip content={<CustomNullTooltip />} />
-                <Bar dataKey="nulos" radius={[3, 3, 0, 0]}>
-                  {NULL_DATA.map(entry => (
-                    <Cell key={entry.variable} fill={entry.color} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </QuestionCard>
-
-          {/* Detalle nulos P8/P9/P10 */}
-          <div className="flex flex-col gap-4">
-            <QuestionCard q="P8" title="Variable con más nulos">
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <AlertTriangle className="w-5 h-5 text-[#D12C26]" />
-                  <span className="text-sm font-black text-[#D12C26]">Fecha Fin Liquidacion</span>
-                </div>
-                <StatBig value={fmtNum(5004452)} sub="registros nulos" color="#D12C26" />
-                <div className="flex items-center gap-2">
-                  <div className="flex-1 bg-gray-100 rounded-full h-2">
-                    <div className="h-2 rounded-full bg-[#D12C26]" style={{ width: '89.15%' }} />
-                  </div>
-                  <span className="text-xs font-black text-[#D12C26]">89.15%</span>
-                </div>
-              </div>
-            </QuestionCard>
-
-            <QuestionCard q="P9" title="% nulos en Fecha de Firma">
-              <div className="flex items-end gap-3">
-                <div>
-                  <div className="text-5xl font-black text-[#F59E0B] tabular-nums">7.17</div>
-                  <div className="text-xs text-gray-400 mt-0.5">porcentaje de nulos</div>
-                </div>
-                <div className="text-right text-xs text-gray-500 pb-1">
-                  <div className="font-semibold text-gray-700">{fmtNum(402830)}</div>
-                  <div>de {fmtNum(5614448)}</div>
-                </div>
-              </div>
-              <div className="mt-2 flex items-center gap-2">
-                <div className="flex-1 bg-gray-100 rounded-full h-2">
-                  <div className="h-2 rounded-full bg-[#F59E0B]" style={{ width: '7.17%' }} />
-                </div>
-                <span className="text-xs font-semibold text-[#F59E0B]">7.17%</span>
-              </div>
-            </QuestionCard>
-
-            <QuestionCard q="P10" title="Nulos en Fecha Inicio Liquidación">
-              <StatBig value={fmtNum(5004413)} sub="registros nulos (89.15%)" color="#D12C26" />
-              <div className="mt-2 flex items-center gap-2">
-                <div className="flex-1 bg-gray-100 rounded-full h-2">
-                  <div className="h-2 rounded-full bg-[#D12C26]" style={{ width: '89.15%' }} />
-                </div>
-                <span className="text-xs font-semibold text-[#D12C26]">89.15%</span>
-              </div>
-            </QuestionCard>
-          </div>
-        </motion.div>
-
-        {/* ── ROW 3: Valores del Contrato ── */}
-        <motion.div
-          initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}
-          className="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-4"
-        >
-          {/* Top 7 Bar Chart */}
-          <QuestionCard q="P12 · P13" title="Top 7 valores más altos — Valor del Contrato (COP)" className="lg:col-span-3">
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={TOP7_VALUES} margin={{ left: 20, right: 20, top: 10, bottom: 10 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#F0F0F0" vertical={false} />
-                <XAxis dataKey="rank" tickFormatter={v => `#${v}`} tick={{ fontSize: 11, fontWeight: 700, fill: '#374151' }} />
-                <YAxis
-                  tickFormatter={v => `$${(v / 1e12).toFixed(1)}B`}
-                  tick={{ fontSize: 9, fill: '#6B7280' }}
-                  domain={[9500000000000, 10100000000000]}
-                />
-                <Tooltip content={<CustomValueTooltip />} />
-                <ReferenceLine y={9974265138436} stroke="#D12C26" strokeDasharray="4 4" label={{ value: 'Máximo', position: 'right', fontSize: 9, fill: '#D12C26' }} />
-                <Bar dataKey="valor" radius={[4, 4, 0, 0]}>
-                  {TOP7_VALUES.map((entry, i) => (
-                    <Cell key={i} fill={i === 0 ? '#D12C26' : i === 6 ? '#FCD059' : '#004884'} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-            <div className="flex gap-4 text-[10px] text-gray-500 mt-1 justify-center">
-              <span><span className="inline-block w-2 h-2 rounded-sm bg-[#D12C26] mr-1" />Máximo (#1)</span>
-              <span><span className="inline-block w-2 h-2 rounded-sm bg-[#004884] mr-1" />#2 al #6</span>
-              <span><span className="inline-block w-2 h-2 rounded-sm bg-[#FCD059] mr-1" />Séptimo (#7)</span>
-            </div>
-          </QuestionCard>
-
-          {/* Tabla ranking + P11 */}
-          <div className="lg:col-span-2 flex flex-col gap-4">
-            <QuestionCard q="P12" title="Valor máximo del Contrato">
-              <div className="space-y-1">
-                <div className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">Rank #1</div>
-                <div className="text-4xl font-black text-[#D12C26] tabular-nums leading-none">$9,97 B</div>
-                <div className="text-xs text-gray-500 font-mono">COP 9.974.265.138.436</div>
-              </div>
-            </QuestionCard>
-
-            <QuestionCard q="P13" title="Séptimo valor más alto">
-              <div className="space-y-1">
-                <div className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">Rank #7</div>
-                <div className="text-4xl font-black text-[#FCD059] tabular-nums leading-none">$9,65 B</div>
-                <div className="text-xs text-gray-500 font-mono">COP 9.645.115.773.936</div>
-              </div>
-            </QuestionCard>
-
-            <QuestionCard q="P11" title="Valor máximo — Días adicionados">
-              <div className="space-y-1">
-                <div className="text-4xl font-black text-[#F59E0B] tabular-nums">{fmtNum(730533)}</div>
-                <div className="text-xs text-gray-400">días ≈ <strong>~2.001 años</strong></div>
-                <div className="flex items-center gap-1.5 mt-2 p-2 bg-amber-50 border border-amber-200 rounded">
-                  <Info className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                  <span className="text-[10px] text-amber-700">Posible anomalía en datos de origen — requiere validación con la entidad.</span>
-                </div>
-              </div>
-            </QuestionCard>
-          </div>
-        </motion.div>
-
-        {/* ── ROW 4: Tabla ranking + Fecha de Firma ── */}
-        <motion.div
-          initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.45 }}
-          className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4"
-        >
-          {/* Tabla top 7 */}
-          <QuestionCard q="P12 · P13" title="Ranking — 7 contratos de mayor valor">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b-2 border-[#004884]/10">
-                  <th className="text-left py-2 text-[10px] font-black text-gray-400 uppercase tracking-wider">Rank</th>
-                  <th className="text-right py-2 text-[10px] font-black text-gray-400 uppercase tracking-wider">Valor COP</th>
-                  <th className="text-right py-2 text-[10px] font-black text-gray-400 uppercase tracking-wider">Billones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {TOP7_VALUES.map((row, i) => (
-                  <tr
-                    key={row.rank}
-                    className={cn(
-                      'border-b border-gray-100',
-                      i === 0 && 'bg-[#D12C26]/5',
-                      i === 6 && 'bg-[#FCD059]/20'
-                    )}
+            {/* Donut */}
+            <div className="flex flex-col items-center">
+              <div className="relative">
+                <PieChart width={160} height={160}>
+                  <Pie
+                    data={[
+                      { name: 'Nulos', value: 7.17 },
+                      { name: 'Completos', value: 92.83 },
+                    ]}
+                    cx={80} cy={80}
+                    innerRadius={52} outerRadius={72}
+                    startAngle={90} endAngle={-270}
+                    dataKey="value"
+                    strokeWidth={0}
                   >
-                    <td className="py-2.5">
-                      <span className={cn(
-                        'w-6 h-6 rounded-full inline-flex items-center justify-center text-[10px] font-black',
-                        i === 0 ? 'bg-[#D12C26] text-white' : i === 6 ? 'bg-[#FCD059] text-[#004884]' : 'bg-[#004884]/10 text-[#004884]'
-                      )}>
-                        {row.rank}
-                      </span>
-                    </td>
-                    <td className="py-2.5 text-right font-mono text-gray-700 font-semibold">${fmtNum(row.valor)}</td>
-                    <td className="py-2.5 text-right">
-                      <span className={cn('font-black', i === 0 ? 'text-[#D12C26]' : i === 6 ? 'text-[#F59E0B]' : 'text-[#004884]')}>
-                        {(row.valor / 1e12).toFixed(3)} B
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </QuestionCard>
-
-          {/* Fecha de Firma timeline */}
-          <QuestionCard q="P14" title="Rango temporal — Fecha de Firma">
-            <div className="space-y-6">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="border-l-4 border-[#004884] pl-4">
-                  <div className="text-[10px] font-black text-gray-400 uppercase tracking-wider mb-1">Fecha Mínima</div>
-                  <div className="text-2xl font-black text-[#004884]">11 Jun</div>
-                  <div className="text-sm font-bold text-[#004884]/70">2015</div>
-                  <div className="text-[10px] text-gray-400 mt-1">Inicio del sistema SECOP II</div>
-                </div>
-                <div className="border-l-4 border-[#D12C26] pl-4">
-                  <div className="text-[10px] font-black text-gray-400 uppercase tracking-wider mb-1">Fecha Máxima</div>
-                  <div className="text-2xl font-black text-[#D12C26]">4 May</div>
-                  <div className="text-sm font-bold text-[#D12C26]/70">2026</div>
-                  <div className="text-[10px] text-gray-400 mt-1">Registro más reciente</div>
+                    <Cell fill="#F59E0B" />
+                    <Cell fill="#F0F4F8" />
+                  </Pie>
+                </PieChart>
+                <div className="absolute inset-0 flex items-center justify-center flex-col">
+                  <span className="text-2xl font-black text-[#F59E0B]">7.17%</span>
+                  <span className="text-[9px] text-gray-400 font-semibold">NULOS</span>
                 </div>
               </div>
-
-              {/* Timeline visual */}
-              <div className="relative pt-3">
-                <div className="text-[9px] text-gray-400 font-semibold uppercase tracking-wider mb-2">Línea de tiempo</div>
-                <div className="relative h-3 bg-gradient-to-r from-[#004884] to-[#D12C26] rounded-full">
-                  <div className="absolute -top-1 left-0 w-2 h-5 bg-[#004884] rounded-full shadow" />
-                  <div className="absolute -top-1 right-0 w-2 h-5 bg-[#D12C26] rounded-full shadow" />
-                </div>
-                <div className="flex justify-between mt-1.5 text-[9px] text-gray-400 font-mono">
-                  <span>Jun 2015</span>
-                  <span>~10.9 años de cobertura</span>
-                  <span>May 2026</span>
-                </div>
-              </div>
-
-              <div className="bg-[#004884]/5 border border-[#004884]/15 rounded p-4 space-y-2">
-                <div className="text-[10px] font-black text-[#004884] uppercase tracking-wider">Resumen estadístico</div>
-                <div className="grid grid-cols-2 gap-3 text-xs">
-                  <div><span className="text-gray-500">Rango total:</span><br /><strong>~10.9 años</strong></div>
-                  <div><span className="text-gray-500">Registros con fecha:</span><br /><strong>{fmtNum(5614448 - 402830)}</strong></div>
-                  <div><span className="text-gray-500">Registros sin fecha:</span><br /><strong className="text-[#F59E0B]">{fmtNum(402830)} (7.17%)</strong></div>
-                  <div><span className="text-gray-500">Años cubiertos:</span><br /><strong>2015 – 2026</strong></div>
-                </div>
-              </div>
-            </div>
-          </QuestionCard>
-        </motion.div>
-
-        {/* ── RESUMEN FINAL ── */}
-        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}>
-          <div className="bg-[#004884] text-white p-8">
-            <div className="max-w-4xl">
-              <div className="text-[10px] font-black tracking-widest text-[#FCD059] uppercase mb-3">Resumen ejecutivo</div>
-              <h2 className="text-2xl font-black uppercase leading-tight mb-4">Hallazgos principales del dataset</h2>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-sm">
-                <div>
-                  <div className="text-[#FCD059] font-black text-lg">{fmtNum(DATASET_META.totalRegistros)}</div>
-                  <div className="text-white/60 text-xs mt-0.5">contratos registrados desde 2015</div>
-                </div>
-                <div>
-                  <div className="text-[#FCD059] font-black text-lg">89.15%</div>
-                  <div className="text-white/60 text-xs mt-0.5">de contratos sin liquidar aún</div>
-                </div>
-                <div>
-                  <div className="text-[#FCD059] font-black text-lg">$9.97 B COP</div>
-                  <div className="text-white/60 text-xs mt-0.5">contrato de mayor valor registrado</div>
-                </div>
-                <div>
-                  <div className="text-[#FCD059] font-black text-lg">10.9 años</div>
-                  <div className="text-white/60 text-xs mt-0.5">de cobertura temporal (2015–2026)</div>
-                </div>
+              <div className="flex gap-4 text-[10px] text-gray-500 mt-1">
+                <span><span className="inline-block w-2 h-2 rounded-sm bg-[#F59E0B] mr-1" />Nulos (7.17%)</span>
+                <span><span className="inline-block w-2 h-2 rounded-sm bg-[#F0F4F8] border border-gray-300 mr-1" />Completos (92.83%)</span>
               </div>
             </div>
           </div>
-        </motion.div>
+        </QCard>
 
-        <div className="mt-4 text-[10px] text-gray-400 text-center">
-          Fuente: datos.gov.co — Dataset jbjy-vk9h — Consultado {DATASET_META.fechaConsulta} · GobIA Auditor
-        </div>
+        {/* ── P10 ── */}
+        <QCard
+          n={10}
+          enunciado="¿Cuántos registros nulos tiene la variable Fecha Inicio Liquidación?"
+        >
+          <BigAnswer
+            value={fmt(5_004_413)}
+            unit="registros nulos"
+            color="#D12C26"
+          />
+          <div className="mt-4">
+            <PctBar pct={89.15} color="#D12C26" />
+            <p className="text-xs text-gray-400 mt-2">
+              89.15% del total de {fmt(TOTAL_REGISTROS)} registros no tienen fecha de inicio de liquidación,
+              lo que indica que la gran mayoría de contratos aún no han entrado en fase de liquidación.
+            </p>
+          </div>
+        </QCard>
 
+        {/* ── P11 ── */}
+        <QCard
+          n={11}
+          enunciado="¿Cuál es el valor máximo de la variable Días adicionados?"
+        >
+          <BigAnswer
+            value={fmt(730_533)}
+            unit="días"
+            color="#F59E0B"
+          />
+          <div className="mt-4 flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+            <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+            <p className="text-xs text-amber-700 leading-relaxed">
+              730.533 días equivalen a aproximadamente <strong>~2.001 años</strong>.
+              Este valor extremo sugiere una posible anomalía en los datos fuente y debería ser validado directamente con la entidad contratante para confirmar su veracidad.
+            </p>
+          </div>
+        </QCard>
+
+        {/* ── P12 ── */}
+        <QCard
+          n={12}
+          enunciado="¿Cuál es el valor más alto de la variable Valor del Contrato encontrado en la base de datos?"
+        >
+          <BigAnswer
+            value="$9.974.265.138.436"
+            unit="COP"
+            color="#004884"
+          />
+          <p className="text-xs text-gray-400 mt-3">
+            Equivale a <strong>{fmtCOP(9_974_265_138_436)}</strong> de pesos colombianos.
+          </p>
+        </QCard>
+
+        {/* ── P13 ── */}
+        <QCard
+          n={13}
+          enunciado="¿Cuál es el séptimo valor más alto de la variable Valor del Contrato encontrado en la base de datos?"
+        >
+          {/* Respuesta */}
+          <div className="mb-6 p-4 border-l-4 border-[#FCD059] bg-[#FFFBEB]">
+            <p className="text-[10px] font-black uppercase tracking-wider text-[#92400E] mb-1">Séptimo valor más alto</p>
+            <p className="text-3xl font-black text-[#004884] font-mono">$9.645.115.773.936</p>
+            <p className="text-sm text-gray-500 mt-0.5">COP · {fmtCOP(9_645_115_773_936)}</p>
+          </div>
+
+          {/* Ranking completo top 7 */}
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-3">
+            Ranking — Top 7 Valor del Contrato
+          </p>
+          <div className="space-y-2">
+            {TOP7.map((row) => {
+              const isTarget = row.rank === 7;
+              const barPct = ((row.valor - 9_600_000_000_000) / (9_974_265_138_436 - 9_600_000_000_000)) * 100;
+              return (
+                <div
+                  key={row.rank}
+                  className={cn(
+                    'flex items-center gap-3 p-2.5 rounded-lg border',
+                    isTarget
+                      ? 'border-[#FCD059] bg-[#FFFBEB]'
+                      : row.rank === 1
+                      ? 'border-[#004884]/20 bg-[#F0F7FF]'
+                      : 'border-transparent bg-gray-50'
+                  )}
+                >
+                  <span className={cn(
+                    'w-7 h-7 rounded-full flex items-center justify-center text-xs font-black shrink-0',
+                    isTarget ? 'bg-[#FCD059] text-[#004884]' : row.rank === 1 ? 'bg-[#004884] text-white' : 'bg-gray-200 text-gray-600'
+                  )}>
+                    {row.rank}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="text-[10px] font-mono font-semibold text-gray-700">
+                        ${fmt(row.valor)}
+                      </span>
+                      {isTarget && (
+                        <span className="text-[9px] font-black bg-[#FCD059] text-[#004884] px-2 py-0.5 rounded-full uppercase tracking-wider">
+                          Respuesta P.13
+                        </span>
+                      )}
+                    </div>
+                    <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full"
+                        style={{
+                          width: `${Math.max(barPct, 4)}%`,
+                          backgroundColor: isTarget ? '#F59E0B' : row.rank === 1 ? '#004884' : '#93C5FD',
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </QCard>
+
+        {/* ── P14 ── */}
+        <QCard
+          n={14}
+          enunciado="¿Cuáles son los valores mínimo y máximo de la variable Fecha de Firma?"
+        >
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            {/* Mínimo */}
+            <div className="border-t-4 border-[#004884] pt-4 bg-[#F0F7FF] px-5 pb-5 rounded-b-lg">
+              <p className="text-[10px] font-black uppercase tracking-wider text-[#004884]/60 mb-2">Valor Mínimo</p>
+              <p className="text-4xl font-black text-[#004884] leading-none">11 Jun</p>
+              <p className="text-2xl font-black text-[#004884]/60 mt-1">2015</p>
+              <p className="text-xs text-[#004884]/50 mt-2">Inicio de operación del sistema SECOP II</p>
+            </div>
+            {/* Máximo */}
+            <div className="border-t-4 border-[#D12C26] pt-4 bg-[#FEF2F2] px-5 pb-5 rounded-b-lg">
+              <p className="text-[10px] font-black uppercase tracking-wider text-[#D12C26]/60 mb-2">Valor Máximo</p>
+              <p className="text-4xl font-black text-[#D12C26] leading-none">4 May</p>
+              <p className="text-2xl font-black text-[#D12C26]/60 mt-1">2026</p>
+              <p className="text-xs text-[#D12C26]/50 mt-2">Registro de firma más reciente en la base</p>
+            </div>
+          </div>
+
+          {/* Timeline */}
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-3">
+              Línea de tiempo · Cobertura total ~10,9 años
+            </p>
+            <div className="relative">
+              <div className="h-3 rounded-full bg-gradient-to-r from-[#004884] to-[#D12C26] shadow-inner" />
+              <div className="flex justify-between mt-2 text-xs font-semibold">
+                <span className="text-[#004884]">11 Jun 2015</span>
+                <span className="text-gray-400 text-[10px]">≈ 10,9 años de cobertura</span>
+                <span className="text-[#D12C26]">4 May 2026</span>
+              </div>
+
+              {/* Hitos */}
+              <div className="mt-5 grid grid-cols-3 gap-3 text-center">
+                {[
+                  { label: 'Año de inicio', value: '2015' },
+                  { label: 'Años cubiertos', value: '~10.9' },
+                  { label: 'Año más reciente', value: '2026' },
+                ].map(h => (
+                  <div key={h.label} className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                    <p className="text-lg font-black text-[#004884]">{h.value}</p>
+                    <p className="text-[9px] text-gray-400 uppercase tracking-wider font-semibold mt-0.5">{h.label}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </QCard>
+
+      </div>
+
+      {/* Footer */}
+      <div className="max-w-5xl mx-auto px-8 pb-10">
+        <p className="text-[10px] text-gray-400 text-center">
+          Fuente: datos.gov.co · Dataset jbjy-vk9h ·{' '}
+          <a
+            href="https://www.datos.gov.co/Estad-sticas-Nacionales/SECOP-II-Contratos-Electr-nicos/jbjy-vk9h"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline hover:text-gray-600 transition-colors"
+          >
+            SECOP II — Contratos Electrónicos
+          </a>{' '}
+          · Consultado 2026-05-08 · GobIA Auditor
+        </p>
       </div>
     </div>
   );
