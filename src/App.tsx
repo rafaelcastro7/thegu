@@ -798,27 +798,35 @@ export default function App() {
   };
 
   const handleExportCSV = () => {
-    setShowFindingsOverview(true);
-    return;
-
     if (results.length === 0) return;
-    const headers = ["Proveedor", "NIT", "Riesgo", "Valor Total", "Similitud %", "Contratos", "Ventana Días"];
+    const headers = [
+      lang === 'ES' ? "Proveedor" : "Provider",
+      "NIT",
+      lang === 'ES' ? "Riesgo" : "Risk",
+      lang === 'ES' ? "Valor Total" : "Total Value",
+      lang === 'ES' ? "Similitud %" : "Similarity %",
+      lang === 'ES' ? "Contratos" : "Contracts",
+      lang === 'ES' ? "Ventana Días" : "Day Window",
+    ];
     const rows = results.map(r => [
-      r.providerName,
-      r.groupKey.split('-')[1],
+      `"${r.providerName}"`,
+      r.groupKey.replace('REF:', ''),
       r.risk,
       r.totalValue,
       (r.similarityScore * 100).toFixed(2),
       r.contracts.length,
-      r.maxDayDiff
+      r.maxDayDiff,
     ]);
     const csvContent = [headers.join(","), ...rows.map(row => row.join(","))].join("\n");
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob(["﻿" + csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `audit_payload_${new Date().toISOString().split('T')[0]}.csv`;
+    link.download = `auditoria_forense_${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(link);
     link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const heroEntityRows = auditedEntities.slice(0, 6);
@@ -937,7 +945,7 @@ export default function App() {
           </div>
           <div className="h-4 w-px bg-white/20" />
           <h1 className="text-[10px] font-bold tracking-widest text-white/90 uppercase">
-            GOBIA AUDITOR | ANALITICA DE CONTRATACION PUBLICA
+            GOBIA AUDITOR | ANALÍTICA DE CONTRATACIÓN PÚBLICA
           </h1>
         </div>
         <div className="flex items-center gap-6">
@@ -998,7 +1006,7 @@ export default function App() {
            <button 
              data-testid="advanced-console-button"
              onClick={() => setShowSettings(true)}
-             title={lang === 'ES' ? 'Configuracion avanzada' : 'Advanced configuration'}
+             title={lang === 'ES' ? 'Configuración avanzada' : 'Advanced configuration'}
              className="w-10 h-10 flex items-center justify-center text-[#666666] hover:text-[#004884] hover:bg-gray-100 transition-all border border-[#E6E6E6]"
            >
              <Settings size={18} />
@@ -1113,25 +1121,18 @@ export default function App() {
               )}
             </div>
 
-            <div className="gov-card p-6 border-l-4 border-l-[#FCD059] space-y-4">
-              <p className="header-label !mb-0">{isEs ? 'Base de confianza' : 'Trust foundation'}</p>
+            <div className="gov-card p-6 border-l-4 border-l-[#FCD059] space-y-5">
+              <p className="header-label !mb-0">{isEs ? 'Señales de riesgo activas' : 'Active risk signals'}</p>
               <h3 className="text-2xl font-black text-[#333333] uppercase tracking-tight">
-                {isEs ? 'Respaldo que sostiene la plataforma' : 'What underpins the platform'}
+                {isEs ? 'Qué detecta el motor de inferencia' : 'What the inference engine detects'}
               </h3>
-              <div className="space-y-4">
-                {openSourceRegistry.map(source => (
-                  <div key={source.title} className="border border-[#E6E6E6] p-4 bg-white space-y-3">
-                    <div className="flex items-center gap-3">
-                      <source.icon size={16} className="text-[#004884]" />
-                      <p className="text-sm font-black text-[#333333] uppercase">{source.title}</p>
-                    </div>
-                    <p className="text-sm text-gray-500 leading-relaxed">{source.description}</p>
-                    <div className="flex flex-wrap gap-2">
-                      {source.tags.map(tag => (
-                        <span key={tag} className="px-2 py-1 bg-gray-50 border border-gray-100 text-[9px] font-bold uppercase tracking-wider text-gray-500">
-                          {tag}
-                        </span>
-                      ))}
+              <div className="space-y-3">
+                {riskSignals.map(signal => (
+                  <div key={signal.title} className="border border-[#E6E6E6] p-4 bg-white flex gap-4 items-start">
+                    <div className="w-2 h-2 mt-1.5 bg-[#FCD059] rounded-full shrink-0" />
+                    <div>
+                      <p className="text-sm font-black text-[#333333] uppercase">{signal.title}</p>
+                      <p className="text-[11px] text-gray-500 leading-relaxed mt-1">{signal.text}</p>
                     </div>
                   </div>
                 ))}
@@ -1139,13 +1140,13 @@ export default function App() {
             </div>
 
             <div className="gov-card p-6 border-l-4 border-l-[#D12C26] space-y-5">
-              <p className="header-label !mb-0">{isEs ? 'Tesis de valor' : 'Value thesis'}</p>
+              <p className="header-label !mb-0">{isEs ? 'Cobertura de la sesión' : 'Session coverage'}</p>
               <h3 className="text-2xl font-black text-[#333333] uppercase tracking-tight">
-                {isEs ? 'Por qué esta propuesta escala' : 'Why this proposal scales'}
+                {isEs ? 'Estado de la auditoría actual' : 'Current audit status'}
               </h3>
               <div className="grid grid-cols-2 gap-3">
                 {[
-                  { label: isEs ? 'Contratos auditados' : 'Contracts audited', value: auditCoverage.totalContracts },
+                  { label: isEs ? 'Contratos analizados' : 'Contracts analyzed', value: auditCoverage.totalContracts },
                   { label: isEs ? 'Proveedores en hallazgos' : 'Providers in findings', value: auditCoverage.providerCount },
                   { label: isEs ? 'Entidades cubiertas' : 'Entities covered', value: auditCoverage.entityCount || monitoredEntities.length },
                   { label: isEs ? 'Departamentos' : 'Departments', value: auditCoverage.departmentCount || '--' },
@@ -1156,10 +1157,14 @@ export default function App() {
                   </div>
                 ))}
               </div>
-              <div className="space-y-2">
-                {systemFacts.map(fact => (
-                  <p key={fact} className="text-sm text-gray-600 leading-relaxed">
-                    <span className="font-black text-[#004884]">-</span> {fact}
+              <div className="pt-2 space-y-2">
+                {[
+                  isEs ? 'Fuentes jurídicas indexadas: ' + LEGAL_KNOWLEDGE_BASE.length + ' referencias.' : 'Indexed legal references: ' + LEGAL_KNOWLEDGE_BASE.length + '.',
+                  isEs ? 'Persistencia activa: análisis y reportes en caché.' : 'Active persistence: analyses and reports cached.',
+                  isEs ? 'RAG jurídico local disponible sin conexión externa.' : 'Local legal RAG available without external connectivity.',
+                ].map(fact => (
+                  <p key={fact} className="text-[11px] text-gray-500 leading-relaxed">
+                    <span className="font-black text-[#D12C26]">—</span> {fact}
                   </p>
                 ))}
               </div>
@@ -1223,17 +1228,46 @@ export default function App() {
 
                 {/* Main Results Table-like View */}
                 <div className="space-y-6">
-                  <div className="flex items-center justify-between border-b border-[#E6E6E6] pb-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#E6E6E6] pb-4">
                     <h3 className="section-title text-lg flex items-center gap-3">
                       <BarChart3 size={20} /> {t.dashboard.pattern_discovery}
                     </h3>
-                    <div className="flex items-center gap-4">
-                      {results.length > 0 && (
-                        <>
-                          <button onClick={handleExportCSV} className="gov-button flex items-center gap-2">
-                            <Download size={14} /> {t.dashboard.export}
+                    <div className="flex flex-wrap items-center gap-3">
+                      {/* Risk filter */}
+                      <div className="flex items-center gap-1">
+                        {(['All', 'Red', 'Orange', 'Green'] as const).map(r => (
+                          <button
+                            key={r}
+                            onClick={() => setFilterRisk(r)}
+                            className={cn(
+                              "px-3 py-1.5 text-[9px] font-black uppercase tracking-widest transition-all border",
+                              filterRisk === r
+                                ? r === 'Red' ? "bg-red-600 text-white border-red-600"
+                                  : r === 'Orange' ? "bg-orange-400 text-white border-orange-400"
+                                  : r === 'Green' ? "bg-emerald-600 text-white border-emerald-600"
+                                  : "bg-[#004884] text-white border-[#004884]"
+                                : "bg-white text-gray-400 border-[#E6E6E6] hover:border-gray-300"
+                            )}
+                          >
+                            {r === 'All' ? (isEs ? 'Todos' : 'All') : r}
                           </button>
-                        </>
+                        ))}
+                      </div>
+                      {/* Sort */}
+                      <select
+                        value={sortBy}
+                        onChange={e => setSortBy(e.target.value as typeof sortBy)}
+                        className="h-8 bg-white border border-[#E6E6E6] px-2 text-[9px] font-black uppercase tracking-widest text-gray-500 focus:outline-none focus:border-[#004884]"
+                      >
+                        <option value="risk">{isEs ? 'Ordenar: Riesgo' : 'Sort: Risk'}</option>
+                        <option value="value">{isEs ? 'Ordenar: Monto' : 'Sort: Amount'}</option>
+                        <option value="similarity">{isEs ? 'Ordenar: Similitud' : 'Sort: Similarity'}</option>
+                        <option value="recent">{isEs ? 'Ordenar: Ventana' : 'Sort: Window'}</option>
+                      </select>
+                      {results.length > 0 && (
+                        <button onClick={handleExportCSV} className="gov-button flex items-center gap-2">
+                          <Download size={14} /> {t.dashboard.export}
+                        </button>
                       )}
                     </div>
                   </div>
@@ -1294,11 +1328,11 @@ export default function App() {
                                    </p>
                                 </div>
                                 <div className="text-right">
-                                   <p className="header-label">Monto Total</p>
+                                   <p className="header-label">{isEs ? 'Monto Total' : 'Total Amount'}</p>
                                    <p className="text-xl font-black text-[#333333] tabular-nums">${(r.totalValue / 1e6).toFixed(1)}M</p>
                                 </div>
                                 <div className="text-right w-24">
-                                   <p className="header-label">Contratos</p>
+                                   <p className="header-label">{isEs ? 'Contratos' : 'Contracts'}</p>
                                    <p className="text-xl font-black text-[#333333] tabular-nums">{r.contracts.length}</p>
                                 </div>
                                 <div className="w-10 h-10 flex items-center justify-center bg-gray-50 border border-gray-100 rounded-full group-hover:bg-[#004884] group-hover:text-white transition-all">
@@ -1314,7 +1348,7 @@ export default function App() {
                          <Target className="text-gray-200" size={40} />
                        </div>
                        <p className="text-[12px] font-bold uppercase tracking-[0.2em] text-gray-400">{t.dashboard.empty}</p>
-                       <p className="text-sm text-gray-300 mt-2">Realice una búsqueda o espere al ciclo automático</p>
+                       <p className="text-sm text-gray-300 mt-2">{isEs ? 'Realice una búsqueda o espere al ciclo automático' : 'Run a search or wait for the automatic cycle'}</p>
                     </div>
                   )}
                 </div>
@@ -1330,14 +1364,14 @@ export default function App() {
                 className="max-w-6xl mx-auto w-full pb-40"
               >
                 <div className="mb-16 border-b-4 border-[#FCD059] pb-8 space-y-4">
-                  <p className="header-label">{isEs ? 'DOSSIER TÉCNICO Y NARRATIVO' : 'TECHNICAL AND NARRATIVE DOSSIER'}</p>
+                  <p className="header-label">{isEs ? 'DOCUMENTACIÓN TÉCNICA Y OPERATIVA' : 'TECHNICAL AND OPERATIONAL DOCUMENTATION'}</p>
                   <h2 className="text-5xl font-black text-[#004884] uppercase tracking-tighter leading-none">
-                    {isEs ? 'Lo que el jurado y el público deben entender del sistema' : 'What the jury and the public should understand about the system'}
+                    {isEs ? 'Cómo opera GobIA Auditor' : 'How GobIA Auditor operates'}
                   </h2>
                   <p className="text-lg text-gray-500 max-w-4xl">
                     {isEs
-                      ? 'Esta vista resume el problema, las fuentes abiertas, las reglas de inferencia, la arquitectura real y el tipo de evidencia que GobIA Auditor entrega. La idea es que nadie tenga que adivinar cómo funciona.'
-                      : 'This view summarizes the problem, the open sources, the inference rules, the real architecture, and the kind of evidence GobIA Auditor produces. Nobody should have to guess how it works.'}
+                      ? 'Esta vista resume las fuentes abiertas, las reglas de inferencia, el flujo operativo y el tipo de evidencia que produce la plataforma. Cada hallazgo es trazable hasta su origen.'
+                      : 'This view summarizes the open sources, the inference rules, the operational flow, and the kind of evidence the platform produces. Every finding is traceable to its origin.'}
                   </p>
                 </div>
 
@@ -1345,7 +1379,7 @@ export default function App() {
                   {[
                     { id: 'OVERVIEW', label: isEs ? 'Resumen' : 'Overview' },
                     { id: 'SOURCES', label: isEs ? 'Fuentes' : 'Sources' },
-                    { id: 'FLOW', label: isEs ? 'Operacion' : 'Flow' },
+                    { id: 'FLOW', label: isEs ? 'Operación' : 'Flow' },
                     { id: 'KNOWLEDGE', label: isEs ? 'Capacidades' : 'Capabilities' },
                   ].map((tab) => (
                     <button
@@ -1462,21 +1496,21 @@ export default function App() {
                   <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
                     <div className="space-y-8 bg-[#004884] p-12 text-white">
                       <h3 className="text-2xl font-black uppercase flex items-center gap-4">
-                        <Gavel className="text-[#FCD059]" size={24} /> {isEs ? 'Por qué esto importa para el jurado' : 'Why this matters to the jury'}
+                        <Gavel className="text-[#FCD059]" size={24} /> {isEs ? 'Propósito institucional' : 'Institutional purpose'}
                       </h3>
                       <p className="text-lg text-white/90 leading-relaxed font-medium">
                         {isEs
-                          ? 'La propuesta no se limita a visualizar contratos: transforma datos abiertos en una hipótesis de riesgo explicable, trazable y exportable. Eso reduce semanas de lectura manual a minutos de revisión asistida.'
-                          : 'The proposal does more than visualize contracts: it turns open data into an explainable, traceable, exportable risk hypothesis. That reduces weeks of manual reading to minutes of assisted review.'}
+                          ? 'La plataforma transforma datos abiertos en hipótesis de riesgo explicables, trazables y exportables. Reduce semanas de lectura manual a minutos de revisión asistida por IA.'
+                          : 'The platform turns open data into explainable, traceable, exportable risk hypotheses. It reduces weeks of manual reading to minutes of AI-assisted review.'}
                       </p>
                       <div className="space-y-3">
                         {[
                           isEs ? 'Hace visible qué entidades están siendo auditadas y por qué.' : 'Makes visible which entities are being audited and why.',
-                          isEs ? 'Muestra las fuentes abiertas consultadas sin ocultarlas tras lenguaje de IA.' : 'Shows the open sources consulted instead of hiding them behind AI jargon.',
+                          isEs ? 'Muestra las fuentes abiertas consultadas sin ocultarlas tras lenguaje de IA.' : 'Shows the open sources consulted without hiding them behind AI jargon.',
                           isEs ? 'Entrega evidencia utilizable para contralorías, periodistas y vigilancia ciudadana.' : 'Produces usable evidence for oversight bodies, journalists, and civic watchdogs.',
                         ].map(point => (
                           <p key={point} className="text-sm text-white/90 leading-relaxed">
-                            <span className="font-black text-[#FCD059]">-</span> {point}
+                            <span className="font-black text-[#FCD059]">—</span> {point}
                           </p>
                         ))}
                       </div>
@@ -1941,7 +1975,7 @@ export default function App() {
                                       {contract.referencia_proceso || current.contractId}
                                     </div>
                                     <div className="bg-gray-50 border border-gray-100 p-3">
-                                      <span className="font-black text-[#004884]">{lang === 'ES' ? 'ID de adjudicacion' : 'Award ID'}:</span>{' '}
+                                      <span className="font-black text-[#004884]">{lang === 'ES' ? 'ID de adjudicación' : 'Award ID'}:</span>{' '}
                                       {contract.id_adjudicacion || 'N/A'}
                                     </div>
                                   </div>
