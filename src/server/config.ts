@@ -19,7 +19,7 @@ export const config = {
     user: process.env.DB_USER || "postgres",
     password: process.env.DB_PASSWORD || "postgres",
     name: process.env.DB_NAME || "thegu",
-    port: readInt("DB_PORT", 5432),
+    port: readInt("DB_PORT", 5433),
   },
 };
 
