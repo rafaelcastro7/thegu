@@ -1250,16 +1250,224 @@ function PanelAPI() {
   );
 }
 
+// ─── RETO 3 — STRESS TEST CIBERSEGURIDAD — "PEZ GORDO" ─────────────────────
+
+const COLOR_R3 = '#dc2626';
+const LIGHT_R3 = '#fef2f2';
+
+const R3_ENTIDADES = [
+  { nombre: 'SUBRED INTEGRADA DE SERVICIOS DE SALUD SUR E.S.E.',          contratos: 8,  monto: 25_366_945_751 },
+  { nombre: 'SUBRED INTEGRADA DE SERVICIOS DE SALUD NORTE E.S.E.',        contratos: 7,  monto: 14_937_484_380 },
+  { nombre: 'SUBRED INTEGRADA DE SERVICIOS DE SALUD SUR OCCIDENTE ESE.',  contratos: 3,  monto: 14_342_366_014 },
+  { nombre: 'SUBRED INTEGRADA DE SERVICIO DE SALUD CENTRO ORIENTE E.S.E.', contratos: 11, monto: 12_716_440_146 },
+  { nombre: 'ESE HOSPITAL SAN RAFAEL DE TUNJA',                           contratos: 6,  monto:  5_207_342_475 },
+  { nombre: 'ESE REGIÓN DE SALUD SOACHA',                                 contratos: 3,  monto:  1_049_570_129 },
+  { nombre: 'HOSPITAL DEPARTAMENTAL UNIVERSITARIO SANTA SOFIA DE CALDAS', contratos: 14, monto:  1_041_367_213 },
+  { nombre: 'E.S.E HOSPITAL SAN RAFAEL DE CAQUEZA',                       contratos: 4,  monto:    950_000_000 },
+  { nombre: 'ESE HOSPITAL SAN JOSE DE GUADUAS',                           contratos: 2,  monto:    386_006_250 },
+  { nombre: 'ESE HOSPITAL LOCAL CARTAGENA DE INDIAS',                     contratos: 2,  monto:    187_199_011 },
+  { nombre: 'ESE HOSPITAL REGIONAL VALLE DE TENZA',                       contratos: 3,  monto:    168_285_895 },
+  { nombre: 'ESE HOSPITAL NUESTRA SEÑORA DE LAS MERCEDES FUNZA',          contratos: 3,  monto:    130_000_000 },
+  { nombre: 'HOSPITAL CENTRAL DE LA POLICIA',                             contratos: 1,  monto:      7_000_000 },
+  { nombre: 'HOSPITAL MILITAR CENTRAL',                                   contratos: 1,  monto:      4_692_500 },
+];
+
+const R3_SUPERVISORES = [
+  { nombre: 'MIGUEL RODRIGUEZ BALLEN',              cc: '79732346' },
+  { nombre: 'ADRIANA XIMENA GALINDO SANDOVAL',      cc: '40041885' },
+  { nombre: 'ANDREA MARCELA CASTILLO GONZALEZ',     cc: '52754014' },
+  { nombre: 'NESTOR RAUL VALERO ZULUAGA',           cc: '79234539' },
+  { nombre: 'JUAN CARLOS SANCHEZ RENDON',           cc: '16115079' },
+  { nombre: 'RUTH MARGARITA FERNANDEZ MORRIS',      cc: '32670645' },
+  { nombre: 'ALEXIS ORJUELA ANGULO',                cc: '79214264' },
+  { nombre: 'PAOLA ANDREA ALMANZA RUIZ',            cc: '39813238' },
+  { nombre: 'MARIA CAROLINA LEAL APONTE',           cc: '52489647' },
+];
+
+function PanelReto3() {
+  const fmtCOP = (v: number) =>
+    '$' + v.toLocaleString('es-CO') + ' COP';
+
+  const barData = R3_ENTIDADES.slice(0, 8).map(e => ({
+    name: e.nombre.split(' ').slice(0, 3).join(' '),
+    monto: Math.round(e.monto / 1_000_000),
+    contratos: e.contratos,
+  }));
+
+  return (
+    <div className="space-y-6">
+
+      {/* Encabezado de perfil */}
+      <motion.div
+        initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}
+        className="rounded-2xl overflow-hidden shadow-lg"
+        style={{ background: `linear-gradient(135deg, ${COLOR_R3} 0%, #991b1b 100%)` }}
+      >
+        <div className="px-8 py-6 flex flex-col sm:flex-row items-start sm:items-center gap-6">
+          <div className="w-16 h-16 rounded-2xl bg-white/20 flex items-center justify-center shrink-0">
+            <AlertTriangle className="w-8 h-8 text-white" />
+          </div>
+          <div className="flex-1">
+            <p className="text-[9px] font-black uppercase tracking-widest text-red-200 mb-1">
+              Reto 3 — Hackathon Nacional COL 5.0 · Stress Test Ciberseguridad
+            </p>
+            <p className="text-2xl font-black text-white leading-tight">Rafael Antonio Salamanca</p>
+            <p className="text-sm text-red-200 mt-1 font-mono">CC: 17068260</p>
+          </div>
+          <div className="shrink-0 text-right">
+            <p className="text-[9px] font-black uppercase tracking-widest text-red-200">Monto total</p>
+            <p className="text-xl font-black text-white">$76.5B COP</p>
+            <p className="text-[10px] text-red-200">68 contratos · 14 entidades</p>
+          </div>
+        </div>
+        {/* Ficha identidad */}
+        <div className="bg-black/20 px-8 py-4 grid grid-cols-2 sm:grid-cols-4 gap-4 text-white">
+          {[
+            { label: 'Género', value: 'Hombre' },
+            { label: 'Nacionalidad', value: 'Colombia (CO)' },
+            { label: 'Entidades', value: '14' },
+            { label: 'Contratos', value: '68' },
+          ].map(item => (
+            <div key={item.label}>
+              <p className="text-[9px] font-black uppercase tracking-widest text-red-300">{item.label}</p>
+              <p className="text-sm font-black">{item.value}</p>
+            </div>
+          ))}
+          <div className="col-span-2 sm:col-span-4">
+            <p className="text-[9px] font-black uppercase tracking-widest text-red-300">Domicilio</p>
+            <p className="text-xs font-mono">TRANSVERSAL 93 No 51 - 98 BODEGA 18 PARQUE EMPRESARIAL PUERTA DEL SOL</p>
+          </div>
+        </div>
+      </motion.div>
+
+      {/* Gráfico de entidades */}
+      <QCard n="E1" title="Top 8 entidades contratantes por monto (millones COP)" color={COLOR_R3} light={LIGHT_R3}>
+        <ResponsiveContainer width="100%" height={260}>
+          <BarChart data={barData} margin={{ top: 8, right: 8, left: 0, bottom: 60 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+            <XAxis dataKey="name" tick={{ fontSize: 9 }} angle={-35} textAnchor="end" interval={0} />
+            <YAxis tick={{ fontSize: 9 }} tickFormatter={v => `$${v}M`} />
+            <Tooltip formatter={(v: number) => [`$${v.toLocaleString('es-CO')} M`, 'Monto']} />
+            <Bar dataKey="monto" radius={[4, 4, 0, 0]}>
+              {barData.map((_, i) => (
+                <Cell key={i} fill={i === 0 ? COLOR_R3 : '#fca5a5'} />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </QCard>
+
+      {/* Tabla completa entidades */}
+      <QCard n="E2" title="Relación completa de 14 entidades contratantes" color={COLOR_R3} light={LIGHT_R3}>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs border-collapse">
+            <thead>
+              <tr style={{ background: LIGHT_R3 }}>
+                <th className="text-left py-2 px-3 font-black text-slate-500 w-8">#</th>
+                <th className="text-left py-2 px-3 font-black text-slate-500">Entidad</th>
+                <th className="text-right py-2 px-3 font-black text-slate-500">Contratos</th>
+                <th className="text-right py-2 px-3 font-black text-slate-500">Monto</th>
+              </tr>
+            </thead>
+            <tbody>
+              {R3_ENTIDADES.map((e, i) => (
+                <tr key={i} className="border-t border-slate-100 hover:bg-red-50 transition-colors">
+                  <td className="py-2 px-3 font-black text-slate-400">{i + 1}</td>
+                  <td className="py-2 px-3 text-slate-700 leading-tight">{e.nombre}</td>
+                  <td className="py-2 px-3 text-right font-black" style={{ color: COLOR_R3 }}>{e.contratos}</td>
+                  <td className="py-2 px-3 text-right font-mono text-slate-600">{fmtCOP(e.monto)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t-2" style={{ borderColor: COLOR_R3 }}>
+                <td colSpan={2} className="py-3 px-3 font-black text-slate-700">TOTAL</td>
+                <td className="py-3 px-3 text-right font-black" style={{ color: COLOR_R3 }}>68</td>
+                <td className="py-3 px-3 text-right font-black font-mono" style={{ color: COLOR_R3 }}>
+                  {fmtCOP(76_494_699_764)}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </QCard>
+
+      {/* Tabla supervisores */}
+      <QCard n="S1" title="Supervisores identificados (con cédula)" color={COLOR_R3} light={LIGHT_R3}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {R3_SUPERVISORES.map((s, i) => (
+            <div key={i} className="flex items-center gap-3 p-3 rounded-lg border border-red-100 bg-red-50">
+              <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-white text-[10px] font-black"
+                style={{ background: COLOR_R3 }}>{i + 1}</div>
+              <div>
+                <p className="text-[11px] font-black text-slate-700 leading-tight">{s.nombre}</p>
+                <p className="text-[10px] font-mono text-slate-400">CC: {s.cc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </QCard>
+
+      {/* Script público */}
+      <QCard n="⚙" title="Script público — pez_gordo.py" color={COLOR_R3} light={LIGHT_R3}>
+        <div className="space-y-4">
+          <div className="p-4 rounded-lg border font-mono text-xs text-slate-600 bg-slate-900 text-green-400" style={{ borderColor: COLOR_R3 + '40' }}>
+            <p className="text-slate-400 mb-1"># Repositorio público</p>
+            <p>rafaelcastro7/thegu — rama: codex/pro-backend-rag-v2</p>
+            <p className="mt-2 text-slate-400"># Archivo</p>
+            <p>pez_gordo.py</p>
+          </div>
+          <a
+            href="https://github.com/rafaelcastro7/thegu/blob/codex/pro-backend-rag-v2/pez_gordo.py"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-white text-xs font-black transition-opacity hover:opacity-90"
+            style={{ background: COLOR_R3 }}
+          >
+            <ExternalLink className="w-3.5 h-3.5" />
+            Ver pez_gordo.py en GitHub
+          </a>
+        </div>
+      </QCard>
+
+      {/* Metodología */}
+      <QCard n="M1" title="Metodología — Filtros aplicados en el Stress Test" color={COLOR_R3} light={LIGHT_R3}>
+        <div className="space-y-3">
+          {[
+            { filtro: 'TipoDocProveedor', valor: 'CC (Cédula de Ciudadanía)', desc: 'Solo personas naturales colombianas identificadas con CC.' },
+            { filtro: 'Documento Proveedor', valor: 'Numérico válido', desc: 'Descarta NITs, pasaportes, documentos extranjeros o valores nulos.' },
+            { filtro: 'Domicilio Rep. Legal', valor: 'No nulo y no vacío', desc: 'Proveedor con domicilio registrado y verificable.' },
+            { filtro: 'Entidades distintas', valor: '≥ 10', desc: 'Umbral que identifica proveedores con red de contratación inusualmente amplia.' },
+            { filtro: 'Monto máximo', valor: 'Top por valor acumulado', desc: 'El "Pez Gordo" es quien maximiza el monto total adjudicado bajo estos criterios.' },
+          ].map((row, i) => (
+            <div key={i} className="flex gap-4 p-3 rounded-lg border border-red-100 bg-red-50">
+              <div className="shrink-0">
+                <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded text-white" style={{ background: COLOR_R3 }}>{row.filtro}</span>
+              </div>
+              <div>
+                <p className="text-[11px] font-black text-slate-700">{row.valor}</p>
+                <p className="text-[10px] text-slate-500 mt-0.5">{row.desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </QCard>
+
+    </div>
+  );
+}
+
 // ─── COMPONENTE PRINCIPAL ──────────────────────────────────────────────────
 
 export function SECOPAnalysis() {
-  const [activeTab, setActiveTab] = useState<'RETO1' | 'RETO2' | 'API'>('RETO1');
+  const [activeTab, setActiveTab] = useState<'RETO1' | 'RETO2' | 'API' | 'RETO3'>('RETO1');
   const [activeDB, setActiveDB] = useState<'DB1' | 'DB2'>('DB1');
 
   const mainTabs = [
     { id: 'RETO1' as const, label: 'Reto 1', sub: 'SECOP II — API Socrata', color: '#004884', badge: '2 Bases de Datos' },
     { id: 'RETO2' as const, label: 'Reto 2', sub: 'CSV 2026-05-06',          color: '#7c3aed', badge: '1.003.902 registros' },
     { id: 'API'   as const, label: 'API & Docs', sub: 'REST Endpoints',       color: '#0f172a', badge: '7 endpoints' },
+    { id: 'RETO3' as const, label: 'Reto 3',    sub: 'Stress Test — Ciberseguridad', color: '#dc2626', badge: 'Pez Gordo' },
   ];
 
   const db1Tabs = [
@@ -1396,6 +1604,12 @@ export function SECOPAnalysis() {
           {activeTab === 'API' && (
             <motion.div key="api" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.2 }}>
               <PanelAPI />
+            </motion.div>
+          )}
+
+          {activeTab === 'RETO3' && (
+            <motion.div key="reto3" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.2 }}>
+              <PanelReto3 />
             </motion.div>
           )}
 
