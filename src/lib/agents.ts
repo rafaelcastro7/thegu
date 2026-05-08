@@ -22,47 +22,47 @@ const MEMORY_KEY = 'gob_ia_neural_memory';
 
 export const AGENT_PERSONAS = {
   FORENSIC: {
-    name: "Audit Sentinel",
-    focus: "OECD Pattern Recognition",
-    role: "Analizar desviaciones estadísticas y anomalías de mercado.",
-    color: "#a855f7",
-    icon: "Activity"
+    name: 'Correlacion de patrones',
+    focus: 'Similitud, ventanas temporales y sintesis',
+    role: 'Convierte el lote analizado en una lectura ejecutiva y probatoria.',
+    color: '#a855f7',
+    icon: 'Activity',
   },
   LEGAL: {
-    name: "Juris Guard",
-    focus: "Compliance & Jurisprudence",
-    role: "Validar hallazgos contra el bloque de constitucionalidad.",
-    color: "#10b981",
-    icon: "Gavel"
+    name: 'Contexto normativo',
+    focus: 'RAG juridico y referencias aplicables',
+    role: 'Recupera y ordena normas, principios y contexto legal relevante.',
+    color: '#10b981',
+    icon: 'Gavel',
   },
   SYSTEM: {
-    name: "Resilience Node",
-    focus: "Self-Optimization & Health",
-    role: "Garantizar la estabilidad y refinar pesos neuronales de detección.",
-    color: "#3b82f6",
-    icon: "Cpu"
+    name: 'Memoria operativa',
+    focus: 'Sesion, aprendizaje y consistencia',
+    role: 'Mantiene memoria de patrones, estado de la sesion y recalibracion.',
+    color: '#3b82f6',
+    icon: 'Cpu',
   },
   FINANCIAL: {
-    name: "Fiscal Hunter",
-    focus: "Money Trailing",
-    role: "Rastrear flujos de capital y detectar sobrecostos atípicos.",
-    color: "#f59e0b",
-    icon: "DollarSign"
+    name: 'Concentracion de valor',
+    focus: 'Cuantias, agregacion y umbrales',
+    role: 'Resume exposicion economica y patrones de acumulacion de monto.',
+    color: '#f59e0b',
+    icon: 'DollarSign',
   },
   ETHICS: {
-    name: "Probity Arbiter",
-    focus: "Conflict of Interest",
-    role: "Verificar integridad de contratistas y posibles nexos políticos.",
-    color: "#ef4444",
-    icon: "ShieldCheck"
+    name: 'Revision competitiva',
+    focus: 'Modalidades y presion competitiva',
+    role: 'Evalua el peso de modalidades no competitivas dentro del grupo.',
+    color: '#ef4444',
+    icon: 'ShieldCheck',
   },
   FIELD: {
-    name: "Ground Scout",
-    focus: "Project Verification",
-    role: "Verificar evidencia física y logística de ejecución en territorio.",
-    color: "#64748b",
-    icon: "MapPin"
-  }
+    name: 'Trazabilidad documental',
+    focus: 'Fechas, contratos y fuente abierta',
+    role: 'Prepara la trazabilidad contrato a contrato usando el registro disponible.',
+    color: '#64748b',
+    icon: 'MapPin',
+  },
 };
 
 function getMemory(): NeuralMemory {
@@ -74,8 +74,24 @@ function saveMemory(mem: NeuralMemory) {
   localStorage.setItem(MEMORY_KEY, JSON.stringify(mem));
 }
 
+function buildCompetitionSummary(result: AnalysisResult, isEs: boolean) {
+  const nonCompetitiveCount = result.contracts.filter((contract) => {
+    const modality = contract.modalidad_de_contratacion?.toUpperCase() || '';
+    return (
+      modality.includes('DIRECTA') ||
+      modality.includes('MINIMA') ||
+      modality.includes('PRESTACION DE SERVICIOS')
+    );
+  }).length;
+
+  const share = result.contracts.length > 0 ? Math.round((nonCompetitiveCount / result.contracts.length) * 100) : 0;
+  return isEs
+    ? `Modalidades no competitivas en ${nonCompetitiveCount}/${result.contracts.length} contratos (${share}%).`
+    : `Non-competitive procedures in ${nonCompetitiveCount}/${result.contracts.length} contracts (${share}%).`;
+}
+
 export async function runCollaborativeAudit(
-  result: AnalysisResult, 
+  result: AnalysisResult,
   lang: 'ES' | 'EN' = 'ES',
   onUpdate?: (logs: AgentAction[], memory: NeuralMemory) => void
 ) {
@@ -88,46 +104,95 @@ export async function runCollaborativeAudit(
     if (onUpdate) onUpdate([...logs], { ...memory });
   };
 
-  // 1. SYSTEM: Check Health & Load Memory
-  addLog('SYSTEM', isEs ? "Restaurando pesos neurales de ciclos previos..." : "Restoring neural weights from previous audit cycles...", 'THINKING');
-  await neuralManager.processRequest("Restore neural weights", { type: 'SYSTEM' });
-  addLog('SYSTEM', isEs ? `Memoria activa: ${memory.totalAudits} nodos procesados.` : `Memory active: ${memory.totalAudits} historical nodes processed.`, 'EXECUTING');
+  addLog(
+    'SYSTEM',
+    isEs
+      ? `Recuperando memoria de sesion. Patrones activos: ${memory.detectedPatterns.length}.`
+      : `Restoring session memory. Active patterns: ${memory.detectedPatterns.length}.`,
+    'THINKING'
+  );
+  await neuralManager.processRequest('Restore session memory', { type: 'SYSTEM' });
+  addLog(
+    'SYSTEM',
+    isEs
+      ? `Ciclos historicos disponibles: ${memory.totalAudits}.`
+      : `Historical audit cycles available: ${memory.totalAudits}.`,
+    'COMPLETED'
+  );
 
-  // 2. LEGAL & ETHICS: Compliance & Probe
-  addLog('LEGAL', isEs ? `Escaneando banderas rojas OCDE: ${result.redFlags.length} detectadas` : `Scanning Socrata Context vs OECD Red Flags: ${result.redFlags.length} detected`, 'THINKING');
-  addLog('ETHICS', isEs ? "Auditando integridad de firmantes y posibles conflictos..." : "Auditing integrity of signatories and potential conflicts...", 'THINKING');
-  await neuralManager.processRequest(`Scan context for ${result.redFlags.length} flags`, { type: 'LEGAL' });
-  const legalContext = await getLegalContext(result.contracts[0].objeto_del_contrato, result.redFlags);
-  addLog('LEGAL', isEs ? "Jurisprudencia reclasificada." : "Jurisprudence re-ranked.", 'COMPLETED');
-  addLog('ETHICS', isEs ? "Análisis de nexos completado. Nivel de integridad: Estable." : "Nexus analysis completed. Integrity level: Stable.", 'COMPLETED');
+  addLog(
+    'LEGAL',
+    isEs
+      ? `Consultando contexto legal para ${result.redFlags.length} alerta(s).`
+      : `Retrieving legal context for ${result.redFlags.length} alert(s).`,
+    'EXECUTING'
+  );
+  const queryObject = result.contracts[0]?.objeto_del_contrato || result.redFlags.join('. ') || 'contratación pública';
+  const legalContext = await getLegalContext(queryObject, result.redFlags);
+  addLog(
+    'LEGAL',
+    isEs ? 'Contexto normativo priorizado para el expediente.' : 'Legal context ranked for the case file.',
+    'COMPLETED'
+  );
 
-  // 3. FINANCIAL & FIELD: Value & Reality Sync
-  addLog('FINANCIAL', isEs ? "Rastreando flujos de capital y concentración de valor..." : "Tracing capital flows and value concentration...", 'EXECUTING');
-  addLog('FIELD', isEs ? "Simulando verificación técnica en territorio (GeoSync)..." : "Simulating technical verification in territory (GeoSync)...", 'EXECUTING');
-  await new Promise(r => setTimeout(r, 1000));
-  addLog('FINANCIAL', isEs ? "Alertas de sobrecosto marginal procesadas." : "Marginal overcost alerts processed.", 'COMPLETED');
-  addLog('FIELD', isEs ? "Evidencia satelital indexada. Coherencia física detectada." : "Satellite evidence indexed. Physical coherence detected.", 'COMPLETED');
+  addLog(
+    'ETHICS',
+    buildCompetitionSummary(result, isEs),
+    'COMPLETED'
+  );
 
-  // 4. FORENSIC: Synthesis
-  addLog('FORENSIC', isEs ? "Cruzando clústeres temporales y acumulación de valor..." : "Cross-referencing temporal clusters and value bunching...", 'THINKING');
-  
-  const forensicPrompt = isEs 
-    ? `Realiza una auditoría forense profunda para ${result.providerName}. El riesgo es ${result.riskScore}/100. Analiza la similitud del ${(result.similarityScore * 100).toFixed(1)}% y los ${result.contracts.length} contratos encontrados. Utiliza el contexto legal: ${legalContext}`
+  addLog(
+    'FINANCIAL',
+    isEs
+      ? `Exposicion agregada identificada: $${result.totalValue.toLocaleString()}.`
+      : `Aggregated exposure identified: $${result.totalValue.toLocaleString()}.`,
+    'COMPLETED'
+  );
+
+  addLog(
+    'FIELD',
+    isEs
+      ? `Trazabilidad preparada para ${result.contracts.length} contrato(s) con fechas y fuente abierta.`
+      : `Traceability assembled for ${result.contracts.length} contract(s) with dates and open source references.`,
+    'COMPLETED'
+  );
+
+  addLog(
+    'FORENSIC',
+    isEs
+      ? 'Sintetizando hallazgo, evidencia y lectura ejecutiva.'
+      : 'Synthesizing the finding, evidence, and executive readout.',
+    'THINKING'
+  );
+
+  const forensicPrompt = isEs
+    ? `Realiza una auditoria forense profunda para ${result.providerName}. El riesgo es ${result.riskScore}/100. Analiza la similitud del ${(result.similarityScore * 100).toFixed(1)}% y los ${result.contracts.length} contratos encontrados. Utiliza el contexto legal: ${legalContext}`
     : `Perform a deep forensic audit for ${result.providerName}. Risk is ${result.riskScore}/100. Analyze the ${(result.similarityScore * 100).toFixed(1)}% similarity and the ${result.contracts.length} contracts found. Use legal context: ${legalContext}`;
-  
-  const report = await neuralManager.processRequest(forensicPrompt, { type: 'FORENSIC', result, lang });
-  addLog('FORENSIC', isEs ? "Informe de Auditoría sintetizado." : "Audit Report synthesized. Pattern vector locked.", 'COMPLETED');
 
-  // 4. SYSTEM: Self-Improvement (Learning Loop)
-  addLog('SYSTEM', isEs ? "Analizando rendimiento... optimizando umbrales." : "Analyzing system performance... Self-optimizing detection thresholds.", 'OPTIMIZING');
+  const report = await neuralManager.processRequest(forensicPrompt, { type: 'FORENSIC', result, lang });
+  addLog(
+    'FORENSIC',
+    isEs ? 'Informe tecnico consolidado.' : 'Technical report consolidated.',
+    'COMPLETED'
+  );
+
+  addLog(
+    'SYSTEM',
+    isEs ? 'Actualizando memoria del caso y sensibilidad del sistema.' : 'Updating case memory and system sensitivity.',
+    'OPTIMIZING'
+  );
   memory.totalAudits += 1;
   if (result.risk === 'Red') {
-    const uniqueFlags = result.redFlags.filter(f => !memory.detectedPatterns.includes(f));
+    const uniqueFlags = result.redFlags.filter((flag) => !memory.detectedPatterns.includes(flag));
     memory.detectedPatterns.push(...uniqueFlags);
   }
-  memory.systemBiasAdjustment += 0.005; // Incremental tuning
+  memory.systemBiasAdjustment += 0.005;
   saveMemory(memory);
-  addLog('SYSTEM', isEs ? "Ciclo de aprendizaje completado. Sensibilidad actualizada." : "Learning cycle completed. Neural sensitivity updated.", 'COMPLETED');
+  addLog(
+    'SYSTEM',
+    isEs ? 'Memoria de sesion actualizada.' : 'Session memory updated.',
+    'COMPLETED'
+  );
 
   return { report, logs, memory };
 }
@@ -138,19 +203,20 @@ export async function performAutonomousTraining(entity: string) {
     logs.push({ agent, message, timestamp: new Date().toISOString(), status });
   };
 
-  addLog('SYSTEM', `Initiating autonomous scan for: ${entity}`, 'EXECUTING');
+  addLog('SYSTEM', `Preparando nuevo ciclo de entrenamiento para ${entity}.`, 'EXECUTING');
   await neuralManager.processRequest(`Boot training sequence for ${entity}`, { type: 'TRAINING' });
-  
-  addLog('LEGAL', `Indexing new documentation for ${entity} into RAG vectors...`, 'THINKING');
-  await neuralManager.processRequest(`Index RAG vectors for ${entity}`, { type: 'TRAINING' });
-  
-  addLog('FORENSIC', `Training pattern recognition on ${entity} dataset...`, 'OPTIMIZING');
+
+  addLog('LEGAL', `Reindexando contexto legal asociado a ${entity}.`, 'EXECUTING');
+  await neuralManager.processRequest(`Index legal vectors for ${entity}`, { type: 'TRAINING' });
+
+  addLog('FORENSIC', `Recalculando patrones recurrentes para ${entity}.`, 'OPTIMIZING');
   await neuralManager.processRequest(`Execute local training on ${entity} patterns`, { type: 'TRAINING' });
+
   const memory = getMemory();
   memory.totalAudits += 1;
   memory.systemBiasAdjustment += 0.002;
   saveMemory(memory);
-  
-  addLog('SYSTEM', `Node ${entity} training completed. Weights synchronized.`, 'COMPLETED');
+
+  addLog('SYSTEM', `Ciclo de entrenamiento finalizado para ${entity}.`, 'COMPLETED');
   return { logs, memory };
 }

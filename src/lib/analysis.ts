@@ -1,7 +1,8 @@
-import { Contract } from "./secop";
-import { getEmbedding, cosineSimilarity, ai } from "./gemini";
 import { differenceInDays } from "date-fns";
+import { generateQuickObservation, getEmbedding } from "./gemini";
 import { runIntelligenceAudit } from "./intelligence";
+import { Contract } from "./secop";
+import { cosineSimilarity } from "./vector";
 
 export interface DetailedFinding {
   contractId: string;
@@ -21,8 +22,8 @@ export interface AnalysisResult {
   quickObservation?: string;
   redFlags: string[];
   detailedFindings: DetailedFinding[];
-  riskScore: number; // 0-100
-  loadType?: 'FULL' | 'REFERENCE';
+  riskScore: number;
+  loadType?: "FULL" | "REFERENCE";
 }
 
 export interface AnalysisConfig {
@@ -34,153 +35,156 @@ export interface AnalysisConfig {
 const DEFAULT_CONFIG: AnalysisConfig = {
   similarityThreshold: 0.85,
   dayWindow: 90,
-  valueThreshold: 50000000
+  valueThreshold: 50000000,
 };
 
+function cleanValue(val: string) {
+  if (!val) return 0;
+  const cleaned = val.replace(/[^0-9.]/g, "");
+  return parseFloat(cleaned) || 0;
+}
+
 export async function analyzeContractGroup(
-  groupKey: string, 
-  contracts: Contract[], 
+  groupKey: string,
+  contracts: Contract[],
   config: AnalysisConfig = DEFAULT_CONFIG
 ): Promise<AnalysisResult> {
+  if (contracts.length === 0) {
+    return {
+      groupKey,
+      providerName: 'PROVEEDOR_DESCONOCIDO',
+      contracts: [],
+      totalValue: 0,
+      similarityScore: 0,
+      maxDayDiff: 0,
+      risk: 'Green',
+      quickObservation: '',
+      redFlags: [],
+      detailedFindings: [],
+      riskScore: 0,
+    };
+  }
   const providerName = contracts[0].nombre_del_contratista;
-  
-  // Clean values: remove any non-numeric chars except decimal point
-  const cleanValue = (val: string) => {
-    if (!val) return 0;
-    const cleaned = val.replace(/[^0-9.]/g, '');
-    return parseFloat(cleaned) || 0;
-  };
+  const totalValue = contracts.reduce((acc, contract) => acc + cleanValue(contract.valor_del_contrato), 0);
 
-  const totalValue = contracts.reduce((acc, c) => acc + cleanValue(c.valor_del_contrato), 0);
-  
-  // 1. Temporal Window Analysis
   let maxDiff = 0;
   if (contracts.length > 1) {
     const dates = contracts
-      .map(c => new Date(c.fecha_de_firma))
-      .filter(d => !isNaN(d.getTime()))
+      .map((contract) => new Date(contract.fecha_de_firma))
+      .filter((date) => !isNaN(date.getTime()))
       .sort((a, b) => a.getTime() - b.getTime());
-    
+
     if (dates.length > 1) {
       maxDiff = Math.abs(differenceInDays(dates[dates.length - 1], dates[0]));
     }
   }
 
-  // 2. Semantic Similarity Matrix
-  // We use the embedding cache from gemini.ts implicitly here
-  const embeddings = await Promise.all(contracts.map(c => getEmbedding(c.objeto_del_contrato)));
-  let totalSim = 0;
+  const embeddingResults = await Promise.allSettled(contracts.map((contract) => getEmbedding(contract.objeto_del_contrato)));
+  const embeddings = embeddingResults.map((r) => (r.status === 'fulfilled' ? r.value : null));
+  let totalSimilarity = 0;
   let pairs = 0;
+
   for (let i = 0; i < embeddings.length; i++) {
     for (let j = i + 1; j < embeddings.length; j++) {
       if (embeddings[i] && embeddings[j]) {
-        totalSim += cosineSimilarity(embeddings[i]!, embeddings[j]!);
+        totalSimilarity += cosineSimilarity(embeddings[i], embeddings[j]);
         pairs++;
       }
     }
   }
-  const avgSim = pairs > 0 ? totalSim / pairs : 0;
 
-  // 3. INTELLIGENCE AUDIT (New Forensic Layer)
+  const avgSim = pairs > 0 ? totalSimilarity / pairs : 0;
   const intelAudit = runIntelligenceAudit(contracts);
 
-  // 4. OECD RED FLAGS CALCULATION (Extreme Forensic Mode)
   const redFlags: string[] = [...intelAudit.flags];
   let riskScore = 0;
 
-  // Add intelligence evidence to detailed findings base
-  const forensicEvidence = intelAudit.detailedEvidence;
-
-  // FLAG 1: High Semantic Duplication (Identity of Object)
   if (avgSim > config.similarityThreshold) {
-    redFlags.push("Identidad de Objeto: Duplicidad Semántica Extrema (>85%)");
+    redFlags.push("Identidad de objeto: duplicidad semántica extrema (>85%)");
     riskScore += 50;
   } else if (avgSim > 0.7) {
-    redFlags.push("Similitud de Objeto Sospechosa (>70%)");
+    redFlags.push("Similitud de objeto sospechosa (>70%)");
     riskScore += 25;
   }
 
-  // FLAG 2: Temporal Tightness (Proximity)
   const avgDaysBetween = contracts.length > 1 ? maxDiff / (contracts.length - 1) : 0;
   if (maxDiff < config.dayWindow && contracts.length >= 3) {
-    redFlags.push(`Agolpamiento Temporal: ${contracts.length} contratos en ${maxDiff} días`);
+    redFlags.push(`Aglomeración temporal: ${contracts.length} contratos en ${maxDiff} días`);
     riskScore += 35;
   } else if (avgDaysBetween < 15 && contracts.length > 2) {
-    redFlags.push("Frecuencia de Contratación Anómala (<15 días prom)");
+    redFlags.push("Frecuencia de contratación anómala (<15 días promedio)");
     riskScore += 20;
   }
 
-  // FLAG 3: Value Standardization (Bunching)
-  const values = contracts.map(c => cleanValue(c.valor_del_contrato));
-  const avgValResult = totalValue / contracts.length;
-  const variance = values.reduce((a, b) => a + Math.pow(b - avgValResult, 2), 0) / values.length;
+  const values = contracts.map((contract) => cleanValue(contract.valor_del_contrato));
+  const averageValue = totalValue / contracts.length;
+  const variance = values.reduce((acc, value) => acc + Math.pow(value - averageValue, 2), 0) / values.length;
   const stdDev = Math.sqrt(variance);
-  const coeffVar = avgValResult > 0 ? stdDev / avgValResult : 0;
+  const coeffVar = averageValue > 0 ? stdDev / averageValue : 0;
 
-  if (coeffVar < 0.05 && contracts.length > 3) { // Extremely low variance
-    redFlags.push("Patrón de Bunching Crítico: Estandarización de cuantías (<5% var)");
+  if (coeffVar < 0.05 && contracts.length > 3) {
+    redFlags.push("Patrón de bunching crítico: estandarización de cuantías (<5% var)");
     riskScore += 35;
-  } else if (coeffVar < 0.15 && contracts.length > 2) { 
-    redFlags.push("Estandarización de Cuantías Sospechosa");
+  } else if (coeffVar < 0.15 && contracts.length > 2) {
+    redFlags.push("Estandarización de cuantías sospechosa");
     riskScore += 15;
   }
 
-  // FLAG 4: Volume & Concentration
   if (totalValue > config.valueThreshold * 10) {
-    redFlags.push("Concentración Económica Extrema (>10x Threshold)");
+    redFlags.push("Concentración económica extrema (>10x threshold)");
     riskScore += 30;
   } else if (totalValue > config.valueThreshold * 5) {
-    redFlags.push("Concentración Económica Crítica (>5x Threshold)");
+    redFlags.push("Concentración económica crítica (>5x threshold)");
     riskScore += 20;
   } else if (totalValue > config.valueThreshold) {
     riskScore += 10;
   }
 
-  // FLAG 5: Modality Risk (Abuse of non-competitive processes)
-  const nonCompetitive = contracts.filter(c => {
-    const mod = c.modalidad_de_contratacion?.toUpperCase() || "";
-    return mod.includes('DIRECTA') || 
-           mod.includes('MINIMA') || 
-           mod.includes('PRESTACION DE SERVICIOS') ||
-           mod.includes('CONTRATACION DIRECTA');
+  const nonCompetitive = contracts.filter((contract) => {
+    const modality = contract.modalidad_de_contratacion?.toUpperCase() || "";
+    return (
+      modality.includes("DIRECTA") ||
+      modality.includes("MINIMA") ||
+      modality.includes("PRESTACION DE SERVICIOS") ||
+      modality.includes("CONTRATACION DIRECTA")
+    );
   }).length;
-  
+
   if (nonCompetitive / contracts.length > 0.8 && contracts.length >= 2) {
-    redFlags.push("Abuso de Modalidades No Competitivas (>80% Directa/Mínima/PS)");
+    redFlags.push("Abuso de modalidades no competitivas (>80% directa/mínima/PS)");
     riskScore += 30;
   } else if (nonCompetitive / contracts.length > 0.5) {
-    redFlags.push("Alta Dependencia de Contratación Directa");
+    redFlags.push("Alta dependencia de contratación directa");
     riskScore += 15;
   }
 
-  // Final Risk Classification (Capped at 100)
-  riskScore += (intelAudit.riskScore * 0.5); // Add intelligence weight
+  riskScore += intelAudit.riskScore * 0.5;
   riskScore = Math.min(100, riskScore);
-  
-  // 4. Detailed Findings per Contract
-  const detailedFindings: DetailedFinding[] = contracts.map((c, i) => {
+
+  const detailedFindings: DetailedFinding[] = contracts.map((contract, index) => {
     const individualReasons: string[] = [];
-    const val = cleanValue(c.valor_del_contrato);
-    const mod = c.modalidad_de_contratacion?.toUpperCase() || "";
-    
-    if (val > config.valueThreshold) individualReasons.push("Cuantía individual significativa");
-    if (mod.includes('DIRECTA') || mod.includes('MINIMA')) individualReasons.push(`Modalidad de riesgo: ${c.modalidad_de_contratacion}`);
-    
-    // Check similarity with peers
+    const value = cleanValue(contract.valor_del_contrato);
+    const modality = contract.modalidad_de_contratacion?.toUpperCase() || "";
+
+    if (value > config.valueThreshold) individualReasons.push("Cuantía individual significativa");
+    if (modality.includes("DIRECTA") || modality.includes("MINIMA")) {
+      individualReasons.push(`Modalidad de riesgo: ${contract.modalidad_de_contratacion}`);
+    }
+
     for (let j = 0; j < embeddings.length; j++) {
-      if (i !== j && embeddings[i] && embeddings[j]) {
-        const sim = cosineSimilarity(embeddings[i]!, embeddings[j]!);
-        if (sim > config.similarityThreshold) {
-          individualReasons.push(`Identidad semántica con contrato ${contracts[j].id_contrato} (${(sim * 100).toFixed(1)}%)`);
+      if (index !== j && embeddings[index] && embeddings[j]) {
+        const similarity = cosineSimilarity(embeddings[index], embeddings[j]);
+        if (similarity > config.similarityThreshold) {
+          individualReasons.push(`Identidad semántica con contrato ${contracts[j].id_contrato} (${(similarity * 100).toFixed(1)}%)`);
         }
       }
     }
 
     return {
-      contractId: c.id_contrato || String(i),
+      contractId: contract.id_contrato || String(index),
       reasons: individualReasons,
-      evidence: `Objeto: ${c.objeto_del_contrato.substring(0, 100)}... | Valor: ${c.valor_del_contrato} | Fecha: ${c.fecha_de_firma}`,
-      contract: c
+      evidence: `Objeto: ${contract.objeto_del_contrato.substring(0, 100)}... | Valor: ${contract.valor_del_contrato} | Fecha: ${contract.fecha_de_firma}`,
+      contract,
     };
   });
 
@@ -190,17 +194,10 @@ export async function analyzeContractGroup(
 
   let quickObservation = "";
   if (risk !== "Green") {
-    try {
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: `Actúa como Analista de Integridad de la OCDE. Genera una instrucción de riesgo de UNA SOLA ORACIÓN técnica y contundente para este hallazgo: ${contracts.length} contratos, riesgo ${riskScore}/100, flags [${redFlags.join(', ')}].`,
-        config: { temperature: 0.1 }
-      });
-      quickObservation = response.text || "";
-      quickObservation = quickObservation.trim().replace(/^"|"$/g, '');
-    } catch (e) {
-      quickObservation = "Alerta de fraccionamiento: Patrón de contratación fragmentada detectado sistemáticamente con elusión de competencia.";
-    }
+    quickObservation = await generateQuickObservation(
+      `${contracts.length} contratos, riesgo ${riskScore}/100, flags [${redFlags.join(", ")}].`,
+      "ES" as "ES" | "EN"
+    );
   }
 
   return {
@@ -214,6 +211,6 @@ export async function analyzeContractGroup(
     quickObservation,
     redFlags,
     detailedFindings,
-    riskScore
+    riskScore,
   };
 }

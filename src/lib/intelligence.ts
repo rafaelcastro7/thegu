@@ -7,6 +7,7 @@ export interface IntelligenceRule {
   description: string;
   riskWeight: number;
   source?: string; // Law, Jurisprudence, or Learned Pattern
+  memoryPatterns?: string[];
   isLearned?: boolean;
   discoveredAt?: string;
   check: (contracts: Contract[]) => { triggered: boolean; message: string; evidence?: string };
@@ -63,8 +64,7 @@ export const INITIAL_RULES: IntelligenceRule[] = [
     source: 'Circular 17 CCE',
     riskWeight: 35,
     check: (list) => {
-       const dates = list.map(c => new Date(c.fecha_de_firma).getTime());
-       const uniqueDates = new Set(list.map(c => c.fecha_de_firma.split('T')[0])).size;
+       const uniqueDates = new Set(list.map(c => (c.fecha_de_firma || '').split('T')[0]).filter(Boolean)).size;
        const spread = list.length - uniqueDates;
        return {
          triggered: spread >= 2,
@@ -77,7 +77,7 @@ export const INITIAL_RULES: IntelligenceRule[] = [
     id: 'RULE_NOTORIOUS_ENTITY',
     name: 'Entidad de Alto Riesgo',
     description: 'La entidad contratante tiene historial de opacidad técnica.',
-    source: 'Historial BHA',
+    source: 'Historial institucional',
     riskWeight: 20,
     check: (list) => {
       const entity = list[0]?.nombre_entidad?.toUpperCase() || "";
@@ -114,25 +114,151 @@ export function getActiveRules() {
   return [...INITIAL_RULES, ...dynamicRules];
 }
 
-export function learnFromFindings(analyzedResults: any[]) {
-  const newRule: IntelligenceRule = {
-    id: `LEARNED_${Date.now()}`,
-    name: 'Patrón Emergente de Colusión Inter-Entidad',
-    description: 'Detectado comportamiento coordinado entre múltiples entidades para favorecer un mismo vector técnico.',
-    source: 'Descubrimiento Autónomo Agent-X',
-    isLearned: true,
-    discoveredAt: new Date().toISOString(),
-    riskWeight: 45,
-    check: (list) => {
-      return { triggered: list.length > 5 && Math.random() > 0.8, message: 'Posible colusión inter-institucional detectada.' };
-    }
-  };
-  
-  if (Math.random() > 0.8) {
-    dynamicRules.push(newRule);
-    return newRule;
+function cleanValue(raw: string) {
+  const numeric = Number.parseFloat(String(raw || '').replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
+function getDirectRatio(contracts: Contract[]) {
+  const directCount = contracts.filter(contract => {
+    const modality = contract.modalidad_de_contratacion?.toUpperCase() || '';
+    return (
+      modality.includes('DIRECTA') ||
+      modality.includes('MINIMA') ||
+      modality.includes('PRESTACION DE SERVICIOS') ||
+      modality.includes('CONTRATACION DIRECTA')
+    );
+  }).length;
+
+  return contracts.length > 0 ? directCount / contracts.length : 0;
+}
+
+function getSameDaySpread(contracts: Contract[]) {
+  const normalizedDays = contracts.map(contract => (contract.fecha_de_firma || '').split('T')[0]).filter(Boolean);
+  return contracts.length - new Set(normalizedDays).size;
+}
+
+function getValueCoefficient(contracts: Contract[]) {
+  if (contracts.length === 0) return 1;
+  const values = contracts.map(contract => cleanValue(contract.valor_del_contrato));
+  const average = values.reduce((sum, value) => sum + value, 0) / values.length;
+  if (!average) return 1;
+  const variance = values.reduce((sum, value) => sum + Math.pow(value - average, 2), 0) / values.length;
+  return Math.sqrt(variance) / average;
+}
+
+function getObjectFamilyScore(contracts: Contract[]) {
+  if (contracts.length < 2) return 0;
+
+  const tokenSets = contracts.map(contract => {
+    const normalized = (contract.objeto_del_contrato || '')
+      .toUpperCase()
+      .replace(/[^A-Z0-9ÁÉÍÓÚÑ ]/g, ' ')
+      .split(/\s+/)
+      .filter(token => token.length >= 5);
+    return new Set(normalized);
+  });
+
+  const anchor = Array.from(tokenSets[0]);
+  if (anchor.length === 0) return 0;
+
+  const overlaps = tokenSets.slice(1).map(set => {
+    const shared = anchor.filter(token => set.has(token)).length;
+    return shared / anchor.length;
+  });
+
+  return overlaps.reduce((sum, value) => sum + value, 0) / overlaps.length;
+}
+
+function buildLearnedRule(kind: 'DIRECT_TIME_STACK' | 'VALUE_LADDER' | 'OBJECT_FAMILY') {
+  const discoveredAt = new Date().toISOString();
+
+  if (kind === 'DIRECT_TIME_STACK') {
+    return {
+      id: 'LEARNED_DIRECT_TIME_STACK',
+      name: 'Patrón Aprendido: Bloque Directo Sincronizado',
+      description: 'Aprende cuando un proveedor concentra contratación directa y firmas superpuestas en ventanas cortas.',
+      source: 'Autoaprendizaje del sistema',
+      memoryPatterns: ['contratación directa detectado', 'Sincronía temporal detectada'],
+      isLearned: true,
+      discoveredAt,
+      riskWeight: 30,
+      check: (contracts: Contract[]) => ({
+        triggered: contracts.length >= 3 && getDirectRatio(contracts) >= 0.75 && getSameDaySpread(contracts) >= 2,
+        message: 'Patrón aprendido: bloque de contratación directa sincronizado.',
+        evidence: 'Alta dependencia de contratación directa con firmas concentradas en fechas repetidas.',
+      }),
+    } satisfies IntelligenceRule;
   }
-  return null;
+
+  if (kind === 'VALUE_LADDER') {
+    return {
+      id: 'LEARNED_VALUE_LADDER',
+      name: 'Patrón Aprendido: Escalera de Cuantías',
+      description: 'Aprende secuencias donde múltiples contratos mantienen montos casi idénticos para conservar una ruta de baja competencia.',
+      source: 'Autoaprendizaje del sistema',
+      memoryPatterns: ['Estandarización de cuantías sospechosa', 'Patrón de bunching crítico'],
+      isLearned: true,
+      discoveredAt,
+      riskWeight: 28,
+      check: (contracts: Contract[]) => ({
+        triggered: contracts.length >= 4 && getValueCoefficient(contracts) <= 0.12,
+        message: 'Patrón aprendido: escalera de cuantías con baja variación.',
+        evidence: 'Los valores del clúster permanecen en una banda estrecha que sugiere fragmentación deliberada.',
+      }),
+    } satisfies IntelligenceRule;
+  }
+
+  return {
+    id: 'LEARNED_OBJECT_FAMILY',
+    name: 'Patrón Aprendido: Familia de Objetos Repetidos',
+    description: 'Aprende recurrencias de objetos contractuales con vocabulario técnico altamente compartido.',
+    source: 'Autoaprendizaje del sistema',
+    memoryPatterns: ['Similitud de objeto sospechosa', 'Identidad de objeto'],
+    isLearned: true,
+    discoveredAt,
+    riskWeight: 26,
+    check: (contracts: Contract[]) => ({
+      triggered: contracts.length >= 4 && getObjectFamilyScore(contracts) >= 0.35,
+      message: 'Patrón aprendido: familia de objetos contractuales repetidos.',
+      evidence: 'Los contratos comparten una base léxica y técnica consistente entre sí.',
+    }),
+  } satisfies IntelligenceRule;
+}
+
+export function learnFromFindings(analyzedResults: Array<{ contracts: Contract[]; maxDayDiff?: number }>) {
+  if (!Array.isArray(analyzedResults) || analyzedResults.length === 0) return null;
+
+  const candidateMatrix = [
+    {
+      kind: 'DIRECT_TIME_STACK' as const,
+      hits: analyzedResults.filter(result => {
+        return result.contracts.length >= 3 && getDirectRatio(result.contracts) >= 0.75 && getSameDaySpread(result.contracts) >= 2 && (result.maxDayDiff ?? 999) <= 60;
+      }).length,
+    },
+    {
+      kind: 'VALUE_LADDER' as const,
+      hits: analyzedResults.filter(result => {
+        return result.contracts.length >= 4 && getValueCoefficient(result.contracts) <= 0.12;
+      }).length,
+    },
+    {
+      kind: 'OBJECT_FAMILY' as const,
+      hits: analyzedResults.filter(result => {
+        return result.contracts.length >= 4 && getObjectFamilyScore(result.contracts) >= 0.35;
+      }).length,
+    },
+  ].sort((a, b) => b.hits - a.hits);
+
+  const winner = candidateMatrix[0];
+  if (!winner || winner.hits < 2) return null;
+
+  const existing = dynamicRules.find(rule => rule.id === `LEARNED_${winner.kind}`);
+  if (existing) return existing;
+
+  const learnedRule = buildLearnedRule(winner.kind);
+  dynamicRules.push(learnedRule);
+  return learnedRule;
 }
 
 export function runIntelligenceAudit(contracts: Contract[]) {

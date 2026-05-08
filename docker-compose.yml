@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "3030:3000"
+    environment:
+      - NODE_ENV=production
+      - DB_HOST=postgres
+      - DB_USER=aiuser
+      - DB_PASSWORD=aiagency_secure_2026
+      - DB_NAME=aiagency
+      - DB_PORT=5432
+      - OLLAMA_HOST=http://host.docker.internal:11434
+      - OLLAMA_TIMEOUT_MS=180000
+      - JSON_LIMIT=50mb
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    networks:
+      - ai-net
+
+networks:
+  ai-net:
+    external: true
