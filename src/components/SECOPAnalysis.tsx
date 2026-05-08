@@ -774,7 +774,7 @@ function PanelDB2() {
 
 // ─── COMPONENTE PRINCIPAL ──────────────────────────────────────────────────
 
-export function SECOPAnalysis() {
+export function SECOPAnalysis({ onFase2 }: { onFase2?: () => void } = {}) {
   const [activeDB, setActiveDB] = useState<'DB1' | 'DB2'>('DB1');
 
   const tabs = [
@@ -802,12 +802,23 @@ export function SECOPAnalysis() {
                 <p className="text-sm font-black text-slate-800 leading-none">SECOP II — Análisis Estadístico</p>
               </div>
             </div>
-            <a href={active.dataset === DB1.id ? DB1.url : DB2.url}
-              target="_blank" rel="noopener noreferrer"
-              className="flex items-center gap-1.5 text-[10px] text-slate-400 hover:text-slate-600 transition-colors">
-              <ExternalLink className="w-3 h-3" />
-              {active.dataset}
-            </a>
+            <div className="flex items-center gap-3">
+              <a href={active.dataset === DB1.id ? DB1.url : DB2.url}
+                target="_blank" rel="noopener noreferrer"
+                className="flex items-center gap-1.5 text-[10px] text-slate-400 hover:text-slate-600 transition-colors">
+                <ExternalLink className="w-3 h-3" />
+                {active.dataset}
+              </a>
+              {onFase2 && (
+                <button
+                  onClick={onFase2}
+                  className="px-3 py-1.5 text-[10px] font-black uppercase tracking-widest bg-[#004884] text-white hover:bg-[#003366] transition-colors rounded-none flex items-center gap-1.5"
+                >
+                  <Database className="w-3 h-3" />
+                  Fase 2 — Auditoría
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </header>
