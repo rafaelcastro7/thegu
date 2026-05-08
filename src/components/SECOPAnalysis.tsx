@@ -1417,16 +1417,26 @@ function PanelReto3() {
             <p className="mt-2 text-slate-400"># Archivo</p>
             <p>pez_gordo.py</p>
           </div>
-          <a
-            href="https://github.com/rafaelcastro7/thegu/blob/codex/pro-backend-rag-v2/pez_gordo.py"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-white text-xs font-black transition-opacity hover:opacity-90"
-            style={{ background: COLOR_R3 }}
-          >
-            <ExternalLink className="w-3.5 h-3.5" />
-            Ver pez_gordo.py en GitHub
-          </a>
+          <div className="flex flex-wrap gap-3">
+            <a
+              href="/pez_gordo.py"
+              download="pez_gordo.py"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-white text-xs font-black transition-opacity hover:opacity-90"
+              style={{ background: COLOR_R3 }}
+            >
+              ⬇ Descargar pez_gordo.py
+            </a>
+            <a
+              href="https://github.com/rafaelcastro7/thegu/blob/codex/pro-backend-rag-v2/pez_gordo.py"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-black transition-opacity hover:opacity-90 border"
+              style={{ color: COLOR_R3, borderColor: COLOR_R3 + '60' }}
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              Ver en GitHub
+            </a>
+          </div>
         </div>
       </QCard>
 
