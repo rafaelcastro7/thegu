@@ -280,7 +280,7 @@ export async function createApp() {
 
       for (const model of ollamaModels) {
         try {
-          const ollamaResp = await callOllama("generate", {
+          const ollamaResp = await callOllama("/api/generate", {
             model,
             prompt: `/no_think\n${prompt}`,
             stream: false,
