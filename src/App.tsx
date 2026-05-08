@@ -33,6 +33,7 @@ import { primeAuditExperience } from './lib/localAgents';
 import { OnboardingWizard, shouldShowWizard } from './components/OnboardingWizard';
 import { ChatAssistant } from './components/ChatAssistant';
 import { SECOPDashboard } from './components/SECOPDashboard';
+import { SECOP2Dashboard } from './components/SECOP2Dashboard';
 
 interface NeuralMemorySnapshot {
   totalAudits?: number;
@@ -231,7 +232,7 @@ export default function App() {
   const [sortBy, setSortBy] = useState<'value' | 'similarity' | 'recent' | 'risk'>('risk');
   const [copied, setCopied] = useState(false);
   const [systemHealth, setSystemHealth] = useState(98.42);
-  const [activeView, setActiveView] = useState<'AUDIT' | 'SYSTEM' | 'SECOP_STATS'>('AUDIT');
+  const [activeView, setActiveView] = useState<'AUDIT' | 'SYSTEM' | 'SECOP_STATS' | 'SECOP2_STATS'>('AUDIT');
   const [systemTab, setSystemTab] = useState<'OVERVIEW' | 'SOURCES' | 'FLOW' | 'KNOWLEDGE'>('OVERVIEW');
   const [neuralMemory, setNeuralMemory] = useState<NeuralMemorySnapshot | null>(() => readStoredNeuralMemory());
   const [statusMessage, setStatusMessage] = useState(isEs ? 'Listo para auditar' : 'Ready to audit');
@@ -984,7 +985,8 @@ export default function App() {
             {[
               { id: 'AUDIT', icon: Target, label: isEs ? 'PANEL DE AUDITORIA' : 'AUDIT PANEL' },
               { id: 'SYSTEM', icon: BookOpen, label: isEs ? 'SISTEMA' : 'SYSTEM' },
-              { id: 'SECOP_STATS', icon: BarChart3, label: 'ANÁLISIS SECOP II' }
+              { id: 'SECOP_STATS',  icon: BarChart3, label: 'SECOP II — DB1' },
+              { id: 'SECOP2_STATS', icon: BarChart3, label: 'SECOP II — DB2' }
             ].map(item => (
               <button
                 key={item.id}
@@ -1571,13 +1573,14 @@ export default function App() {
             )}
 
             {activeView === 'SECOP_STATS' && (
-              <motion.section
-                key="secop-stats"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-              >
+              <motion.section key="secop-stats" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                 <SECOPDashboard />
+              </motion.section>
+            )}
+
+            {activeView === 'SECOP2_STATS' && (
+              <motion.section key="secop2-stats" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <SECOP2Dashboard />
               </motion.section>
             )}
           </AnimatePresence>
