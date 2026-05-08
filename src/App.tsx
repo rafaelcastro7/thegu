@@ -32,6 +32,7 @@ import { LEGAL_KNOWLEDGE_BASE } from './lib/legalKnowledgeBase';
 import { primeAuditExperience } from './lib/localAgents';
 import { OnboardingWizard, shouldShowWizard } from './components/OnboardingWizard';
 import { ChatAssistant } from './components/ChatAssistant';
+import { SECOPDashboard } from './components/SECOPDashboard';
 
 interface NeuralMemorySnapshot {
   totalAudits?: number;
@@ -230,7 +231,7 @@ export default function App() {
   const [sortBy, setSortBy] = useState<'value' | 'similarity' | 'recent' | 'risk'>('risk');
   const [copied, setCopied] = useState(false);
   const [systemHealth, setSystemHealth] = useState(98.42);
-  const [activeView, setActiveView] = useState<'AUDIT' | 'SYSTEM'>('AUDIT');
+  const [activeView, setActiveView] = useState<'AUDIT' | 'SYSTEM' | 'SECOP_STATS'>('AUDIT');
   const [systemTab, setSystemTab] = useState<'OVERVIEW' | 'SOURCES' | 'FLOW' | 'KNOWLEDGE'>('OVERVIEW');
   const [neuralMemory, setNeuralMemory] = useState<NeuralMemorySnapshot | null>(() => readStoredNeuralMemory());
   const [statusMessage, setStatusMessage] = useState(isEs ? 'Listo para auditar' : 'Ready to audit');
@@ -982,7 +983,8 @@ export default function App() {
           <div className="flex items-center gap-2">
             {[
               { id: 'AUDIT', icon: Target, label: isEs ? 'PANEL DE AUDITORIA' : 'AUDIT PANEL' },
-              { id: 'SYSTEM', icon: BookOpen, label: isEs ? 'SISTEMA' : 'SYSTEM' }
+              { id: 'SYSTEM', icon: BookOpen, label: isEs ? 'SISTEMA' : 'SYSTEM' },
+              { id: 'SECOP_STATS', icon: BarChart3, label: 'ANÁLISIS SECOP II' }
             ].map(item => (
               <button
                 key={item.id}
@@ -1565,6 +1567,17 @@ export default function App() {
                   onSelfLearning={handleSelfLearning}
                   lang={lang}
                 />
+              </motion.section>
+            )}
+
+            {activeView === 'SECOP_STATS' && (
+              <motion.section
+                key="secop-stats"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+              >
+                <SECOPDashboard />
               </motion.section>
             )}
           </AnimatePresence>
