@@ -30,6 +30,8 @@ import { AuditChatMessage, chatAboutFinding, generateAdaptiveAuditQA, SuggestedA
 import { NOTORIOUS_ENTITIES } from './lib/intelligence';
 import { LEGAL_KNOWLEDGE_BASE } from './lib/legalKnowledgeBase';
 import { primeAuditExperience } from './lib/localAgents';
+import { OnboardingWizard, shouldShowWizard } from './components/OnboardingWizard';
+import { ChatAssistant } from './components/ChatAssistant';
 
 interface NeuralMemorySnapshot {
   totalAudits?: number;
@@ -247,6 +249,10 @@ export default function App() {
   const [sourceError, setSourceError] = useState<string | null>(null);
   const [showEscalationGuide, setShowEscalationGuide] = useState(false);
   const [showFindingsOverview, setShowFindingsOverview] = useState(false);
+  const [showWizard, setShowWizard] = useState(() => {
+    if (typeof localStorage === 'undefined') return false;
+    return shouldShowWizard();
+  });
 
   const auditPanelBridge = useMemo<AuditPanelBridge>(() => {
     const sortedByRisk = [...results].sort((a, b) => b.riskScore - a.riskScore);
@@ -2333,14 +2339,14 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      <AdvancedSettingsModal 
-        isOpen={showSettings} 
-        onClose={() => setShowSettings(false)} 
+      <AdvancedSettingsModal
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
         t={t}
         lang={lang}
         results={results}
         logs={agentLogs}
-        currentConfig={config} 
+        currentConfig={config}
         onRetroactiveAudit={() => handleRetroactiveAudit()}
         onSelfLearning={handleSelfLearning}
         onSave={(e: any) => {
@@ -2353,7 +2359,22 @@ export default function App() {
           });
           setShowSettings(false);
           if (results.length > 0) handleSearch();
-        }} 
+        }}
+      />
+
+      {/* Onboarding Wizard */}
+      <AnimatePresence>
+        {showWizard && (
+          <OnboardingWizard lang={lang} onClose={() => setShowWizard(false)} />
+        )}
+      </AnimatePresence>
+
+      {/* Navigation Chatbot */}
+      <ChatAssistant
+        lang={lang}
+        results={results}
+        selectedResult={selectedResult}
+        entitySearch={entitySearch}
       />
     </div>
   );
