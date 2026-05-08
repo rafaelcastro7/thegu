@@ -1121,7 +1121,7 @@ function PanelReto2() {
 
 // ─── PANEL API DOCS ────────────────────────────────────────────────────────
 
-const API_BASE = 'https://festivals-theaters-toolbox-equal.trycloudflare.com';
+const API_BASE = 'https://licensing-tigers-dayton-rarely.trycloudflare.com';
 
 function PanelAPI() {
   const endpoints = [
@@ -1289,7 +1289,7 @@ export function SECOPAnalysis() {
             </div>
             <div className="flex items-center gap-2">
               <span className="text-[9px] font-black px-2 py-1 rounded bg-emerald-100 text-emerald-700 uppercase tracking-wider">● API Activa</span>
-              <a href={`https://festivals-theaters-toolbox-equal.trycloudflare.com/api/health`}
+              <a href={`https://licensing-tigers-dayton-rarely.trycloudflare.com/api/health`}
                 target="_blank" rel="noopener noreferrer"
                 className="flex items-center gap-1.5 text-[10px] text-slate-400 hover:text-slate-600 transition-colors">
                 <ExternalLink className="w-3 h-3" />
